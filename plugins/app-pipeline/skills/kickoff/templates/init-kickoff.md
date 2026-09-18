@@ -59,7 +59,8 @@ context: |
   <2–6 строк из SAD: что за система, стек, ключевые ограничения>
   Project documentation lives in docs/ (BRD, TRD, SAD, SDD, DDD). Requirement IDs (FR-xxx, NFR-xxx)
   come from docs/02-trd.md and must be preserved in spec requirement headings.
-  Changes are executed in numeric order by the execute-kickoff skill; see docs/07-kickoff.md.
+  Changes are executed wave by wave by the execute-kickoff skill ("Wave" in each proposal's Impact; changes of
+  one wave are independent and may run in parallel git worktrees); see docs/07-kickoff.md.
 rules:
   proposal:
     - 'Reference the change ID (CH-xx) and the FR/NFR IDs from docs/02-trd.md it covers.'
@@ -114,9 +115,10 @@ Greenfield: `openspec/specs/` описывает текущее поведени
 ## Impact
 - Affected components: C-xx, M-xx (из SAD/SDD)
 - Depends on: 001-project-foundation
+- Wave: 2
 - Conditions from audit: <из docs/07-kickoff.md §«Открытые условия», если закрыть нужно до этого change>
 ```
-Секция `## Capabilities` — контракт между proposal и specs в схеме spec-driven; не пропускай.
+Секция `## Capabilities` — контракт между proposal и specs в схеме spec-driven; не пропускай. Строка `- Wave: N` — число из колонки «Волна» дорожной карты, ровно в таком формате и у каждого change: по ней `execute-kickoff` определяет текущую волну и решает, выполнять change последовательно или открыть на волну параллельные worktree. «Affected components» — модули из колонки «Модули M-xx» той же таблицы: воркер волны не выходит за их пределы.
 
 Валидатор требует у change хотя бы одну delta-спецификацию, поэтому `000-walking-skeleton` и `001-project-foundation` получают `specs/platform/spec.md`: скелет — NFR развёртываемости, каркас — остальные сквозные NFR (CI, тесты, наблюдаемость, безопасность платформы, сопровождаемость — сюда входят линтер и проверка границ слоёв, см. «Соглашения по коду» ниже). Две delta-спецификации одной capability в последовательных changes сливаются при archive — штатно. NFR, ограничивающие конкретную capability, живут в её спецификации. Так каждое FR/NFR из TRD — ровно в одном change. Change без спецификаций (рефакторинг, документация) — `.openspec.yaml` в его каталоге:
 ```yaml
@@ -205,7 +207,8 @@ install / dev / test / lint / build / migrate / deploy — реальные ко
 
 ## Workflow
 - The plan is executed by the execute-kickoff skill: `/execute-kickoff` (Claude Code, OpenCode) or `$execute-kickoff` (Codex). One run = one change. It detects the current change and state from openspec/; run it again for the next change.
-- Changes live in openspec/changes/ and run in numeric order: 000 (walking skeleton — done only when the app responds in the target environment) → 001 → 002 → …
+- Changes live in openspec/changes/ and run wave by wave (`- Wave: N` in each proposal.md): 000 (walking skeleton — done only when the app responds in the target environment) → 001 → wave 2 → … A wave with one change runs on the current branch. For a wave with several changes, the run in the primary checkout opens a worktree and a `change/<name>` branch per change, the runs inside those worktrees do the work, and the next run in the primary checkout merges and archives what is verified.
+- On a `change/<name>` branch touch only that change and the modules in its proposal's Impact; never run `openspec archive` there.
 - Unplanned scope → a new change via the openspec-propose skill; never implement without a change. Requirements are EARS (rules in openspec/config.yaml); keep FR/NFR IDs in headings.
 - Human checkpoints and open conditions: docs/07-kickoff.md.
 
@@ -266,6 +269,7 @@ Load and follow the skill `execute-kickoff` (.opencode/skills/execute-kickoff/SK
 - `openspec validate --all --strict` — зелёный, без предупреждения о config.yaml.
 - Каждое FR/NFR из TRD с приоритетом Must/Should встречается ровно в одном `changes/*/specs/` (grep по ID); пропуски и дубли исправить, а не отметить.
 - Все capabilities из дорожной карты имеют каталог в `changes/*/specs/`; `000` не зависит ни от чего, `001` — только от `000`, цикла нет.
+- `grep -H "^- Wave:" openspec/changes/*/proposal.md` даёт ровно одну строку на change, числа совпадают с колонкой «Волна» дорожной карты; у `000` — 0, у `001` — 1.
 - В `changes/*/specs/` нет русского текста.
 - `AGENTS.md` содержит разделы «Architecture» (четыре слоя с каталогами) и «Conventions» с названием линтера и командой; `001-project-foundation/tasks.md` содержит группу «Code conventions»; `openspec/config.yaml` — правила Clean Architecture и линтера в `rules.design` / `rules.tasks`.
 - `.claude/skills/execute-kickoff/SKILL.md`, `.agents/skills/execute-kickoff/SKILL.md`, `.opencode/skills/execute-kickoff/SKILL.md` — три одинаковых файла (`diff`).
@@ -275,7 +279,7 @@ Load and follow the skill `execute-kickoff` (.opencode/skills/execute-kickoff/SK
 
 1. `docs/STATUS.md`: строка `init-kickoff` — `done`, дата.
 2. `git add -A && git commit -m "chore: initialise repository from kickoff plan"`. Если git ругается на identity — спроси: «Задать user.name/user.email для этого репозитория» / «Закоммичу сам». Не пушь.
-3. В чате — итог в 10 строк: сколько changes и требований разложено, что показала валидация, какие Open items в README, и одна фраза: «Запусти `/execute-kickoff` — он начнёт с `000-walking-skeleton`». Не пересказывай план.
+3. В чате — итог в 10 строк: сколько changes и требований разложено, что показала валидация, какие Open items в README, есть ли в плане параллельные волны (по §2а `docs/07-kickoff.md`), и одна фраза: «Запусти `/execute-kickoff` — он начнёт с `000-walking-skeleton`». Не пересказывай план.
 
 ## Чего не делать
 
