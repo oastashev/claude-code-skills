@@ -14,7 +14,7 @@
       "name": "app-pipeline",
       "source": "app-pipeline",
       "displayName": "App Dev Pipeline",
-      "description": "Four-step pipeline (explore → assemble → audit → kickoff) for turning a high-level app idea into audited requirements/design docs and an OpenSpec-ready Claude Code project.",
+      "description": "Four-step pipeline (explore → assemble → audit → kickoff) for turning a high-level app idea into audited requirements/design docs and a launch plan with agent-neutral instructions: init-kickoff sets up an OpenSpec-ready repository for Claude Code, Codex and OpenCode, and the bundled execute-kickoff skill, installed into the repository as is, executes the plan change by change.",
       "version": "1.0.0"
     }
   ]
