@@ -8,5 +8,5 @@
     "email": "oastashev@gmail.com"
   },
   "keywords": ["openspec", "requirements", "planning", "ears", "pipeline"],
-  "skills": "skills/"
+  "skills": "./skills/"
 }
