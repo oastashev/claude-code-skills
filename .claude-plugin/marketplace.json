@@ -1,0 +1,21 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "claude-code-skills",
+  "owner": {
+    "name": "Oleg Astashev",
+    "email": "oastashev@gmail.com"
+  },
+  "description": "Marketplace of Claude Code plugins by Oleg Astashev.",
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "app-pipeline",
+      "source": "app-pipeline",
+      "displayName": "App Dev Pipeline",
+      "description": "Four-step pipeline (explore → assemble → audit → kickoff) for turning a high-level app idea into audited requirements/design docs and an OpenSpec-ready Claude Code project.",
+      "version": "1.0.0"
+    }
+  ]
+}

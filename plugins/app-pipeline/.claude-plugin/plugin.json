@@ -1,0 +1,12 @@
+{
+  "name": "app-pipeline",
+  "displayName": "App Dev Pipeline",
+  "description": "Four-step pipeline (explore → assemble → audit → kickoff) for turning a high-level app idea into audited requirements/design docs and an OpenSpec-ready Claude Code project.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Oleg Astashev",
+    "email": "oastashev@gmail.com"
+  },
+  "keywords": ["openspec", "requirements", "planning", "ears", "pipeline"],
+  "skills": "skills/"
+}
