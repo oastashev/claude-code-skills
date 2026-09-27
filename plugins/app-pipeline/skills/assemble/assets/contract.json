@@ -1,0 +1,10 @@
+{
+  "mode": "fragment",
+  "goal": "",
+  "scope": [],
+  "constraints": [],
+  "freedom": [],
+  "outputs": [],
+  "checks": ["structure", "baseline", "atomicity", "completeness", "consistency", "verifiability", "feasibility", "contracts", "traceability", "external_assumptions"],
+  "unknowns": []
+}

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "stage": "BRD",
+  "entities": {
+    "SRC-EXPLORATION": {
+      "id": "SRC-EXPLORATION", "kind": "source", "stage": "BRD", "status": "active",
+      "statement": "Учебный пример: заменить эту сущность результатом импорта реального источника.",
+      "basis": [], "data": {"sha256": "REPLACE_WITH_IMPORTED_SOURCE", "original": "00-exploration.md"}
+    },
+    "BR-001": {
+      "id": "BR-001", "kind": "obligation", "stage": "BRD", "status": "active",
+      "statement": "Пользователь может экспортировать коллекцию, включая пустую, в корректный файл.",
+      "basis": ["SRC-EXPLORATION"],
+      "data": {"actor": "пользователь", "trigger": "запрос экспорта", "precondition": "коллекция доступна",
+        "action": "экспортировать коллекцию", "outcome": "создан корректный файл, представляющий коллекцию",
+        "exceptions": [], "limits": {}, "phase": "v1", "modality": "must"}
+    },
+    "SC-001": {
+      "id": "SC-001", "kind": "scenario", "stage": "BRD", "status": "active",
+      "statement": "Экспорт пустой коллекции создаёт файл с представлением пустого набора.",
+      "basis": ["BR-001"],
+      "data": {"given": "доступна пустая коллекция", "when": "пользователь запрашивает экспорт",
+        "then": "создан корректный файл пустого набора",
+        "distinguishes": "отвергает реализацию, которая сообщает об успехе, но не создаёт файл"}
+    }
+  },
+  "edges": {
+    "EDGE-001": {"id": "EDGE-001", "type": "verifies", "from": "SC-001", "to": "BR-001",
+      "due_stage": "BRD", "rationale": "Сценарий отличает наблюдаемый результат от ложного сообщения об успехе"}
+  },
+  "documents": {
+    "BRD": {"title": "Экспорт коллекции — учебный BRD",
+      "sections": [{"id": "outcome", "title": "Результат и приёмка", "prose": "Пример одного смыслового блока; не полный BRD проекта.", "entities": ["BR-001", "SC-001"]}]}
+  }
+}

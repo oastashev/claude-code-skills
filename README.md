@@ -53,6 +53,12 @@ plugins/
     skills/                       # auto-discovered Claude Code skills
 ```
 
+## Agent development
+
+Repository instructions, change conventions, and verification commands are in
+[AGENTS.md](AGENTS.md). Claude Code loads the same instructions through
+[CLAUDE.md](CLAUDE.md).
+
 ## Adding a new plugin
 
 1. Create `plugins/<plugin-name>/.claude-plugin/plugin.json`.
