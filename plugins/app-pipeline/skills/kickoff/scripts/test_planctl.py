@@ -25,7 +25,7 @@ class PlanTests(unittest.TestCase):
         for name in ['docs/specification/policy.json', 'docs/specification/revisions/r1/manifest.json',
                      'docs/specification/revisions/r1/review.json', 'docs/specification/approvals/a.json']:
             self.put(name, {})
-        for name in ('00-exploration', 'BRD', 'TRD', 'SAD', 'SDD', 'DDD'):
+        for name in ('00-exploration', '01-BRD', '02-TRD', '03-SAD', '04-SDD', '05-DDD'):
             self.put('docs/' + name + '.md', name, raw=True)
         sha = planctl.digest(self.root / 'docs/00-exploration.md')
         self.put('docs/specification/sources/' + sha + '.txt', '00-exploration', raw=True)
@@ -110,7 +110,7 @@ class PlanTests(unittest.TestCase):
 
     def test_baseline_drift(self):
         self.approve()
-        self.put('docs/TRD.md', 'Changed', raw=True)
+        self.put('docs/02-TRD.md', 'Changed', raw=True)
         self.assertEqual(self.run_check()[0]['readiness'], 'FAIL')
 
     def test_pending_publication(self):
@@ -168,7 +168,7 @@ class PlanTests(unittest.TestCase):
                 planctl.path(self.root, value)
 
     def test_lock_refuses_overwrite(self):
-        self.put('inputs.json', ['docs/TRD.md'])
+        self.put('inputs.json', ['docs/02-TRD.md'])
         args = ['lock', '--root', str(self.root), '--files', 'inputs.json', '--out', 'locked.json']
         self.assertEqual(planctl.main(args), 0)
         original = (self.root / 'locked.json').read_bytes()

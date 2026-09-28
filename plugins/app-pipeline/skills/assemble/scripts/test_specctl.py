@@ -73,8 +73,8 @@ class Transactions(unittest.TestCase):
         self.reviewed(folder)
         result = json.loads(self.call('accept', '--package', str(folder)))
         revision = self.root / 'revisions' / result['revision']
-        self.assertIn('valid file', (revision / 'BRD.md').read_text(encoding='utf-8'))
-        self.assertEqual((self.home/'BRD.md').read_bytes(), (revision/'BRD.md').read_bytes())
+        self.assertIn('valid file', (revision / '01-BRD.md').read_text(encoding='utf-8'))
+        self.assertEqual((self.home/'01-BRD.md').read_bytes(), (revision/'01-BRD.md').read_bytes())
         self.assertIn('PASS', (revision / 'RTM.md').read_text(encoding='utf-8'))
         self.assertEqual(result['gates']['runtime'], 'UNKNOWN')
         self.assertFalse(json.loads(self.call('status'))['approved'])
@@ -187,7 +187,7 @@ class Transactions(unittest.TestCase):
     def test_published_manual_edit_detected(self):
         folder = self.package(); self.reviewed(folder)
         result = json.loads(self.call('accept', '--package', str(folder)))
-        doc = self.root/'revisions'/result['revision']/'BRD.md'
+        doc = self.root/'revisions'/result['revision']/'01-BRD.md'
         doc.write_text('Changed manually', encoding='utf-8')
         with self.assertRaisesRegex(s.Invalid, 'edited'):
             self.call('status')
@@ -209,7 +209,7 @@ class Transactions(unittest.TestCase):
 
     def test_existing_top_level_document_is_not_overwritten(self):
         folder = self.package(); self.reviewed(folder)
-        path = self.home/'BRD.md'; path.write_text('User document', encoding='utf-8')
+        path = self.home/'01-BRD.md'; path.write_text('User document', encoding='utf-8')
         before = s.current(self.root)
         with self.assertRaisesRegex(s.Invalid, 'overwrite'):
             self.call('accept', '--package', str(folder))
@@ -218,7 +218,7 @@ class Transactions(unittest.TestCase):
 
     def test_manual_top_level_edit_blocks_status_and_sync(self):
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
-        path = self.home/'BRD.md'; path.write_text('Manual edit', encoding='utf-8')
+        path = self.home/'01-BRD.md'; path.write_text('Manual edit', encoding='utf-8')
         with self.assertRaisesRegex(s.Invalid, 'edited'):
             self.call('status')
         with self.assertRaisesRegex(s.Invalid, 'unrecognized edits'):
@@ -227,7 +227,7 @@ class Transactions(unittest.TestCase):
 
     def test_missing_top_level_document_is_restored(self):
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
-        path = self.home/'BRD.md'; original = path.read_bytes(); path.unlink()
+        path = self.home/'01-BRD.md'; original = path.read_bytes(); path.unlink()
         self.call('sync-docs')
         self.assertEqual(path.read_bytes(), original)
         s.read_revision(self.root)
@@ -243,7 +243,7 @@ class Transactions(unittest.TestCase):
         with patch.object(s, 'atomic_bytes', side_effect=interrupted):
             with self.assertRaises(OSError):
                 self.call('accept', '--package', str(folder))
-        self.assertTrue((self.home/'BRD.md').is_file())
+        self.assertTrue((self.home/'01-BRD.md').is_file())
         self.assertEqual(s.current(self.root), before)
         self.call('sync-docs')
         s.read_revision(self.root)
@@ -310,7 +310,7 @@ class Transactions(unittest.TestCase):
         self.call('accept', '--package', str(folder))
         self.assertNotEqual(s.current(self.root), previous)
         self.assertFalse(json.loads(self.call('status'))['approved'])
-        self.assertTrue((self.root/'revisions'/previous/'DDD.md').is_file())
+        self.assertTrue((self.root/'revisions'/previous/'05-DDD.md').is_file())
 
     def test_supersession_and_history_are_explicit(self):
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))

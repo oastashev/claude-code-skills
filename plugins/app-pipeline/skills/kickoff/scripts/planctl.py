@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 
 CRITERIA = ('baseline scope atomicity completeness consistency verifiability '
             'feasibility contracts traceability assumptions').split()
+# Document names published by assemble next to its store.
+SPECIFICATION_DOCUMENTS = ('01-BRD.md', '02-TRD.md', '03-SAD.md', '04-SDD.md', '05-DDD.md')
 
 
 def digest(path):
@@ -186,7 +188,7 @@ def check(root, plan_path, execution=False):
     bound_paths = {path(root, name) for name in baseline['files']}
     required_paths = [store / 'CURRENT', store / 'policy.json',
                       snap_path.parent / 'manifest.json', snap_path.parent / 'review.json']
-    required_paths += [store.parent / (name + '.md') for name in ('BRD', 'TRD', 'SAD', 'SDD', 'DDD')]
+    required_paths += [store.parent / name for name in SPECIFICATION_DOCUMENTS]
     exploration = path(root, plan.get('exploration', (store.parent / '00-exploration.md').relative_to(root).as_posix()))
     required_paths.append(exploration)
     for required in required_paths:

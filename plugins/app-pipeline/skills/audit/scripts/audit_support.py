@@ -14,6 +14,9 @@ from pathlib import Path
 
 DEFAULT_PREFIXES = ['CAP', 'US', 'BR', 'FR', 'NFR', 'C', 'M', 'CH', 'T']
 TEXT_EXTENSIONS = {'.md', '.markdown', '.txt'}
+# Document names published by assemble next to its store.
+SPECIFICATION_DOCUMENTS = {'BRD': '01-BRD.md', 'TRD': '02-TRD.md', 'SAD': '03-SAD.md',
+                           'SDD': '04-SDD.md', 'DDD': '05-DDD.md'}
 
 
 def read_json(path):
@@ -126,16 +129,16 @@ def specification_inputs(root, binding):
     paths = {store / 'CURRENT', store / 'policy.json', folder / 'manifest.json',
              folder / 'snapshot.json', folder / 'review.json', folder / 'RTM.md'}
     for name, expected in manifest['files'].items():
-        if name not in {'snapshot.json', 'review.json', 'RTM.md', 'BRD.md', 'TRD.md', 'SAD.md', 'SDD.md', 'DDD.md'}:
+        if name not in {'snapshot.json', 'review.json', 'RTM.md', *SPECIFICATION_DOCUMENTS.values()}:
             raise ValueError('Unexpected specification artifact: ' + name)
         item = input_path(root, (folder / name).relative_to(root))
         if hashlib.sha256(item.read_bytes()).hexdigest() != expected:
             raise ValueError('Edited specification artifact: ' + name)
         paths.add(item)
     for stage in snapshot['documents']:
-        if stage not in ('BRD', 'TRD', 'SAD', 'SDD', 'DDD'):
+        if stage not in SPECIFICATION_DOCUMENTS:
             raise ValueError('Unexpected document stage')
-        paths.add(store.parent / (stage + '.md'))
+        paths.add(store.parent / SPECIFICATION_DOCUMENTS[stage])
     for entity in snapshot['entities'].values():
         if entity['kind'] == 'source':
             sha = entity['data']['sha256']

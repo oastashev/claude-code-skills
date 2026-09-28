@@ -190,7 +190,7 @@ class ChainTests(unittest.TestCase):
         snapshot, manifest = s.read_revision(self.store)
         self.assertEqual(snapshot['entities']['O-1']['data']['outcome'], 'valid file with explicit empty marker')
         for stage in s.STAGES:
-            self.assertEqual(k.digest(self.root / 'docs' / (stage + '.md')), manifest['files'][stage + '.md'])
+            self.assertEqual(k.digest(self.root / 'docs' / s.DOCUMENT_FILES[stage]), manifest['files'][s.DOCUMENT_FILES[stage]])
 
     def test_future_idea_can_remain_outside_obligations_and_tasks(self):
         self.build()

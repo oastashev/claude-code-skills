@@ -20,6 +20,8 @@ import sys
 import uuid
 
 STAGES = ('BRD', 'TRD', 'SAD', 'SDD', 'DDD')
+# Index prefixes order documents after 00-exploration.md: 01-BRD.md ... 05-DDD.md.
+DOCUMENT_FILES = {stage: '%02d-%s.md' % (index, stage) for index, stage in enumerate(STAGES, 1)}
 CRITERIA = ('structure', 'baseline', 'atomicity', 'completeness', 'consistency',
             'verifiability', 'feasibility', 'contracts', 'traceability', 'external_assumptions')
 KINDS = ('source', 'user_decision', 'obligation', 'term', 'contract', 'decision',
@@ -102,13 +104,13 @@ def read_revision(root, revision=None, check_exports=True):
     folder = root / 'revisions' / revision
     manifest = load(folder / 'manifest.json')
     for name, expected in manifest['files'].items():
-        need(name in ('snapshot.json', 'review.json', 'RTM.md') or name in [s + '.md' for s in STAGES],
+        need(name in ('snapshot.json', 'review.json', 'RTM.md') or name in DOCUMENT_FILES.values(),
              'Unexpected revision artifact')
         need(hashlib.sha256((folder / name).read_bytes()).hexdigest() == expected,
              'Published revision was edited: ' + name)
     snapshot = load(folder / 'snapshot.json')
     need(digest(snapshot) == manifest['snapshot_hash'], 'Snapshot identity mismatch')
-    need(set(manifest['files']) == {'snapshot.json', 'review.json', 'RTM.md'} | {s + '.md' for s in snapshot['documents']}, 'Incomplete revision manifest')
+    need(set(manifest['files']) == {'snapshot.json', 'review.json', 'RTM.md'} | {DOCUMENT_FILES[s] for s in snapshot['documents']}, 'Incomplete revision manifest')
     need(manifest['revision'] == revision, 'Revision identifier mismatch')
     for entity in snapshot['entities'].values():
         if entity['kind'] == 'source':
@@ -116,7 +118,7 @@ def read_revision(root, revision=None, check_exports=True):
     if check_exports and revision == current(root):
         need(not (root / 'DOCS-PENDING.json').exists(), 'Document publication interrupted; run sync-docs before continuing')
         for stage in snapshot['documents']:
-            path = root.parent / (stage + '.md')
+            path = root.parent / DOCUMENT_FILES[stage]
             need(path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == manifest['files'][path.name],
                  'Published document missing or edited: ' + str(path) + '; preserve edits before recovery')
     return snapshot, manifest
@@ -368,7 +370,7 @@ def render(snapshot, review=None):
                           'Основания: ' + ', '.join(e['basis']), '', '| Поле | Значение |', '|---|---|']
                 lines += ['| ' + md(k) + ' | ' + md(canonical(v) if not isinstance(v, str) else v) + ' |' for k, v in e['data'].items()]
                 lines.append('')
-        rendered[stage + '.md'] = '\n'.join(lines)
+        rendered[DOCUMENT_FILES[stage]] = '\n'.join(lines)
     lines = ['# RTM', '', '| ID | Тип | От | К | Стадия | Смысловая проверка | Основание |', '|---|---|---|---|---|---|---|']
     for key, edge in sorted(snapshot['edges'].items()):
         status = review['edges'].get(key, {}).get('status', 'UNKNOWN') if review else 'UNKNOWN'
@@ -399,12 +401,12 @@ def sync_docs(root):
         need(current(root) in (journal['parent'], journal['revision']), 'Publication journal does not match CURRENT')
         snapshot, manifest = read_revision(root, journal['revision'], check_exports=False)
         need(manifest['parent'] == journal['parent'] or journal['revision'] == journal['parent'], 'Journal parent mismatch')
-        expected = {s + '.md' for s in snapshot['documents']}
+        expected = {DOCUMENT_FILES[s] for s in snapshot['documents']}
         need(set(journal['documents']) == expected, 'Invalid publication journal document set')
     else:
         snapshot, manifest = read_revision(root, check_exports=False)
         journal = {'revision': manifest['revision'], 'parent': manifest['parent'],
-                   'documents': {s + '.md': manifest['files'][s + '.md'] for s in snapshot['documents']}}
+                   'documents': {DOCUMENT_FILES[s]: manifest['files'][DOCUMENT_FILES[s]] for s in snapshot['documents']}}
     # Inspect ALL destinations before changing any. Never overwrite a third value.
     for name, old_hash in journal['documents'].items():
         path = root.parent / name
@@ -423,7 +425,7 @@ def sync_docs(root):
 
 def publish(root, snapshot, review, parent, generation_contract=None, verification=None):
     old_files = read_revision(root, parent)[1]['files'] if parent else {}
-    documents = {s + '.md': old_files.get(s + '.md') for s in snapshot['documents']}
+    documents = {DOCUMENT_FILES[s]: old_files.get(DOCUMENT_FILES[s]) for s in snapshot['documents']}
     for name, expected in documents.items():
         path = root.parent / name
         if path.exists():
@@ -650,7 +652,7 @@ def main(argv=None):
                      'verification_state': 'CURRENT' if manifest['policy_hash'] == digest(policy(root)) else 'STALE',
                      'state': 'accepted' if manifest['contract'] else 'initialized',
                      'artifacts': str(root / 'revisions' / manifest['revision']),
-                     'documents': {stage: str(root.parent / (stage + '.md')) for stage in snapshot['documents']}}))
+                     'documents': {stage: str(root.parent / DOCUMENT_FILES[stage]) for stage in snapshot['documents']}}))
     return 0
 
 

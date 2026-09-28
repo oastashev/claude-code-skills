@@ -119,13 +119,13 @@ class AuditSupportTests(unittest.TestCase):
         (store / 'CURRENT').write_text('r1', encoding='utf-8')
         (store / 'policy.json').write_text('{}', encoding='utf-8')
         for name, body in [('snapshot.json', '{"entities":{},"documents":{"BRD":{}}}'),
-                           ('review.json', '{}'), ('RTM.md', '# RTM'), ('BRD.md', '# BRD')]:
+                           ('review.json', '{}'), ('RTM.md', '# RTM'), ('01-BRD.md', '# BRD')]:
             (folder / name).write_text(body, encoding='utf-8')
-        (store.parent / 'BRD.md').write_text('# BRD', encoding='utf-8')
+        (store.parent / '01-BRD.md').write_text('# BRD', encoding='utf-8')
         hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.iterdir()}
         (folder / 'manifest.json').write_text(json.dumps({'revision': 'r1', 'files': hashes}), encoding='utf-8')
-        config = self.config([{'path': 'docs/BRD.md', 'role': 'BRD'}])
-        config.write_text(json.dumps({'documents': [{'path': 'docs/BRD.md', 'role': 'BRD'}],
+        config = self.config([{'path': 'docs/01-BRD.md', 'role': 'BRD'}])
+        config.write_text(json.dumps({'documents': [{'path': 'docs/01-BRD.md', 'role': 'BRD'}],
                                      'specification': {'store': 'docs/specification', 'revision': 'r1'}}), encoding='utf-8')
         collect(self.root, config, self.root / 'run')
         manifest = self.root / 'run/manifest.json'
