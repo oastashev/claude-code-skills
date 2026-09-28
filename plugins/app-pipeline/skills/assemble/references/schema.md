@@ -18,15 +18,16 @@ docs/specification/
   approvals/<event-id>.json        # запись явного утверждения пользователя
   DOCS-PENDING.json                # только во время незавершённой публикации
 docs/.audit/assemble/<run-id>/
-  package.json                    # база CURRENT, целевая стадия, ID пакета
+  package.json                    # база CURRENT, целевая стадия, ID пакета, from (пакет-предшественник)
   contract.json
   candidate.json
-  review-request.json             # идентичность зафиксированных входов
+  review-request.json             # идентичность входов и дайджесты источников наследования
   review.json                     # заполнение критического прохода
+  review-brief.md                 # изменения, рёбра для оценки, открытые findings
   preview/                        # производные документы для чтения до принятия
 ```
 
-Пакет создаёт begin. До prepare-review редактируются candidate.json и contract.json; после него заполняется review.json. Исправленный кандидат требует нового пакета и нового ревью. Нельзя редактировать package.json, review-request.json, опубликованные revisions и CURRENT вручную в обычном цикле.
+Пакет создаёт begin, исправленный — `begin --from <пакет>`. До prepare-review редактируются candidate.json и contract.json; после него заполняется review.json. Исправленный кандидат требует нового пакета и нового ревью. Нельзя редактировать package.json, review-request.json, опубликованные revisions и CURRENT вручную в обычном цикле.
 
 Идентификаторы сущностей/рёбер/разделов: латинская буква, затем буквы/цифры/`_.-`, длина до 80. ID стабильны между ревизиями и имеют смысл в namespace хранилища. Дубли JSON-ключей запрещены. Даты UTC, формат JSON UTF-8; нечисловые NaN/Infinity запрещены.
 
@@ -143,9 +144,9 @@ Renderer показывает statement и структурированные п
 
 Начальный контракт: [contract.json](../assets/contract.json). Он требует заполнения цели, scope, outputs и ограничений. mode=fragment — локальный шаг; mode=stage-review — финальная полнота этапа. unknowns содержит только блокирующее для пакета; перед prepare-review список должен быть пустым. Неблокирующие риски и будущие вопросы сохраняются как сущности, а не удаляются из истории.
 
-prepare-review создаёт файл с identity, reviewer, criteria (десять ключей), edges (все рёбра), findings, formal и runtime. Оценка: `{status, reason, evidence: [ID]}`. Допустимые ссылки evidence: ID сущности/ребра, имя документа или mechanical-report. В reason нужны точные поля/разделы и объяснение, что доказано; один ID без объяснения не является качественным ревью.
+prepare-review создаёт файл с identity, reviewer, criteria (десять ключей), edges (все рёбра), findings, formal и runtime. Оценка: `{status, reason, evidence: [ID]}`. Оценка ребра в fragment может дополнительно содержать `inherited: "package:<id>"|"revision:<id>"`: её перенёс скрипт из проверенного ревью, потому что ребро и сущности обоих концов не изменились. check сверяет её с источником, закреплённым в review-request; для новой оценки поле удаляют. Criteria, formal, runtime и оценки stage-review не наследуются. Рёбра с due_stage позже текущей стадии шаблон заполняет NOT_APPLICABLE. Допустимые ссылки evidence: ID сущности/ребра, имя документа или mechanical-report. В reason нужны точные поля/разделы и объяснение, что доказано; один ID без объяснения не является качественным ревью.
 
-findings: уникальный стабильный id, kind, severity, state, reason, sources обязательны машинно; для contradiction/contract_gap также обязательны counterexample и closure. По протоколу сохраняй context, consequence и owner. Открытые находки прошлой принятой ревизии переносятся в шаблон ревью и должны быть явно пересмотрены: их удаление блокируется. Поля formal/runtime используют ту же форму оценки, но PASS требует подходящего исполнимого evidence. NOT_APPLICABLE допускается только политикой.
+findings: уникальный стабильный id, kind, severity, state, reason, sources обязательны машинно; для contradiction/contract_gap также обязательны counterexample и closure. По протоколу сохраняй context, consequence и owner. Открытые находки прошлой принятой ревизии, а при `--from` весь реестр находок проверенного пакета-предшественника, переносятся в шаблон ревью; открытые должны быть явно пересмотрены, их удаление блокируется. Поля formal/runtime используют ту же форму оценки, но PASS требует подходящего исполнимого evidence. NOT_APPLICABLE допускается только политикой.
 
 Внешний formal PASS должен покрывать все действующие behavior текущей стадии (если behavior нет — обязательства); runtime PASS — все действующие обязательства текущей стадии. Несколько evidence могут совместно покрывать набор. Узкий выполненный тест сохраняй как evidence с точным scope, оставляя gate UNKNOWN, если он не покрывает обязательный набор.
 

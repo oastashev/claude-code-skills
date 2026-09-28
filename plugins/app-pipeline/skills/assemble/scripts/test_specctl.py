@@ -61,12 +61,28 @@ class Transactions(unittest.TestCase):
 
     def reviewed(self, folder):
         self.call('prepare-review', '--package', str(folder))
+        return self.fill(folder)
+
+    def fill(self, folder):
         review = s.load(folder / 'review.json')
         review['reviewer'] = 'Regression fixture; synthetic assessment, not an LLM review'
         for assessment in [*review['criteria'].values(), *review['edges'].values()]:
-            assessment.update(status='PASS', reason='Fixture assessment of empty export with distinguishing scenario', evidence=['BR-1', 'SC-1'])
+            if assessment['status'] == 'UNKNOWN':
+                assessment.update(status='PASS', reason='Fixture assessment of empty export with distinguishing scenario', evidence=['BR-1', 'SC-1'])
         self.save(folder / 'review.json', review)
         return review
+
+    def fragment(self):
+        contract = s.load(self.contract); contract['mode'] = 'fragment'; self.save(self.contract, contract)
+
+    def with_second_scenario(self, folder):
+        snapshot = s.load(folder / 'candidate.json')
+        snapshot['entities']['SC-2'] = self.entity('SC-2', 'scenario', {'given': 'one item', 'when': 'export', 'then': 'file with one item',
+            'distinguishes': 'Rejects implementation that drops the last item'}, ['BR-1'])
+        snapshot['edges']['E-2'] = {'id': 'E-2', 'from': 'SC-2', 'to': 'BR-1', 'type': 'verifies', 'due_stage': 'BRD', 'rationale': 'Boundary of one item'}
+        snapshot['documents']['BRD']['sections'][0]['entities'].append('SC-2')
+        self.save(folder / 'candidate.json', snapshot)
+        return snapshot
 
     def test_accept_renders_consistent_documents_and_rtm_without_approval(self):
         folder = self.package()
@@ -363,6 +379,74 @@ class Transactions(unittest.TestCase):
         review['findings'] = []; self.save(new/'review.json', review)
         with self.assertRaisesRegex(s.Invalid, 'Previously open'):
             s.review_gate(self.root, new)
+
+    def test_fragment_inherits_pass_only_for_unchanged_edges(self):
+        self.fragment()
+        folder = self.package(); self.reviewed(folder); accepted = json.loads(self.call('accept', '--package', str(folder)))['revision']
+        added = self.home / 'added'
+        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
+        self.with_second_scenario(added)
+        self.call('prepare-review', '--package', str(added))
+        edges = s.load(added / 'review.json')['edges']
+        self.assertEqual((edges['E-1']['status'], edges['E-1']['inherited']), ('PASS', 'revision:' + accepted))
+        self.assertEqual(edges['E-2']['status'], 'UNKNOWN')
+        brief = (added / 'review-brief.md').read_text(encoding='utf-8')
+        self.assertIn('- E-2: verifies SC-2 → BR-1', brief)
+        self.assertNotIn('- E-1:', brief)
+        self.fill(added)
+        self.assertEqual(s.review_gate(self.root, added)[0]['gate'], 'PASS')
+        changed = self.home / 'changed'
+        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(changed))
+        snapshot = s.load(changed / 'candidate.json'); snapshot['entities']['BR-1']['data']['outcome'] = 'file with header'
+        self.save(changed / 'candidate.json', snapshot)
+        self.call('prepare-review', '--package', str(changed))
+        self.assertNotIn('inherited', s.load(changed / 'review.json')['edges']['E-1'])
+
+    def test_inherited_assessment_cannot_be_forged_or_used_in_stage_review(self):
+        self.fragment()
+        folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
+        added = self.home / 'added'
+        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
+        self.with_second_scenario(added)
+        review = self.reviewed(added)
+        for forged in ('altered', 'minted'):
+            attempt = copy.deepcopy(review)
+            if forged == 'altered':
+                attempt['edges']['E-1']['reason'] = 'Silently rewritten while claiming inheritance'
+            else:
+                attempt['edges']['E-2']['inherited'] = attempt['edges']['E-1']['inherited']
+            self.save(added / 'review.json', attempt)
+            with self.subTest(forged=forged), self.assertRaisesRegex(s.Invalid, 'Inherited assessment'):
+                s.review_gate(self.root, added)
+        contract = s.load(self.contract); contract['mode'] = 'stage-review'; self.save(self.contract, contract)
+        final = self.home / 'final'
+        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(final))
+        self.call('prepare-review', '--package', str(final))
+        self.assertEqual(s.load(final / 'review.json')['edges']['E-1']['status'], 'UNKNOWN')
+
+    def test_begin_from_unaccepted_package_carries_work_and_review(self):
+        self.fragment()
+        first = self.package(); review = self.reviewed(first)
+        review['findings'] = [{'id': 'F-1', 'kind': 'contract_gap', 'severity': 'Medium', 'state': 'open', 'reason': 'Two empty formats',
+                               'sources': ['BR-1'], 'counterexample': 'Empty bytes and empty array both pass', 'closure': 'Choose one format'}]
+        self.save(first / 'review.json', review)
+        self.assertEqual(s.review_gate(self.root, first)[0]['gate'], 'FAIL')
+        fixed = self.home / 'fixed'
+        self.call('begin', '--stage', 'BRD', '--from', str(first), '--work', str(fixed))
+        self.assertEqual(s.load(fixed / 'contract.json'), s.load(first / 'contract.json'))
+        self.with_second_scenario(fixed)
+        self.assertEqual(json.loads(self.call('diff', '--package', str(fixed)))['previous']['new_entities'], ['SC-2'])
+        self.call('prepare-review', '--package', str(fixed))
+        carried = s.load(fixed / 'review.json')
+        self.assertEqual(carried['edges']['E-1']['inherited'], 'package:' + s.load(first / 'package.json')['id'])
+        self.assertEqual([f['id'] for f in carried['findings']], ['F-1'])
+        self.fill(fixed)
+        carried = s.load(fixed / 'review.json'); carried['findings'] = []; self.save(fixed / 'review.json', carried)
+        with self.assertRaisesRegex(s.Invalid, 'Previously open'):
+            s.review_gate(self.root, fixed)
+        other = self.package('other'); self.reviewed(other); self.call('accept', '--package', str(other))
+        with self.assertRaisesRegex(s.Invalid, 'STALE BASE'):
+            self.call('begin', '--stage', 'BRD', '--from', str(first), '--work', str(self.home / 'late'))
 
 
 class DecisionTables(unittest.TestCase):
