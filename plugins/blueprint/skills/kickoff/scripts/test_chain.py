@@ -108,7 +108,7 @@ class ChainTests(unittest.TestCase):
     def audit_plan(self):
         self.counter += 1
         revision = s.current(self.store)
-        prefix = 'outputs/audit/run-' + str(self.counter)
+        prefix = '.blueprint/outputs/audit/run-' + str(self.counter)
         audit = self.root / prefix
         input_file = self.root / ('audit-input-' + str(self.counter) + '.json')
         self.put(input_file, {'documents': [{'path': self.exploration.relative_to(self.root).as_posix(),

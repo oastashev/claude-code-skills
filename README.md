@@ -34,12 +34,12 @@ flowchart TB
   X -->|"READY + approved"| specify["/specify<br/>BRD → TRD → SAD → SDD → DDD<br/>package → review → accept → approve"]
   specify -->|publishes| S["docs/01-BRD.md … 05-DDD.md<br/>docs/specification/ (CURRENT)"]
   S -->|current revision| audit["/audit"]
-  audit -->|writes| R["outputs/audit/run-id/<br/>report · gates · findings · unknowns"]
+  audit -->|writes| R[".blueprint/outputs/audit/run-id/<br/>report · gates · findings · unknowns"]
   R -.->|"findings → /specify change"| specify
   S -->|"DDD approved"| kickoff["/kickoff"]
   R -->|"required gates PASS"| kickoff
   kickoff -->|writes| K["docs/kickoff/ plan · baseline · review · approval<br/>docs/07-kickoff.md · docs/init-kickoff.md"]
-  K -->|"docs/ moves to the app repo"| init["init-kickoff"]
+  K -->|"docs/ and .blueprint/outputs/ move to the app repo"| init["init-kickoff"]
   init -->|creates| O["openspec/ without changes · AGENTS.md<br/>docs/kickoff/adapter.json"]
   O -->|"plan approved + adapter bound"| materialize["/materialize"]
   materialize -->|"next change: create · wait · complete"| C["openspec/changes/id/ · docs/materialize/ roadmap · reviews<br/>docs/08-materialize.md"]
@@ -50,6 +50,10 @@ flowchart TB
 Solid arrows are handoffs through files, labelled with the condition the
 consumer checks; dashed arrows return work to an earlier step. No skill starts the
 next one automatically.
+
+Each skill keeps its intermediate files in `.blueprint/<skill>/<run-id>/` at the
+project root; they are not inputs of later steps. Finished audit reports go to
+`.blueprint/outputs/audit/<run-id>/` and are part of the kickoff baseline.
 
 | Skill | Command | Purpose |
 |---|---|---|

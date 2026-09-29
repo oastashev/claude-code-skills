@@ -19,10 +19,10 @@ policy.json заполняется до первого смыслового ре
 
 ## Пакет
 
-Создай новый `docs/.audit/specify/<run-id>/` для вспомогательных файлов. Подготовь generation-contract.json по assets/contract.json, затем выбери ещё не существующий дочерний каталог package:
+Создай новый `.blueprint/specify/<run-id>/` для вспомогательных файлов. Подготовь generation-contract.json по assets/contract.json, затем выбери ещё не существующий дочерний каталог package:
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py begin --stage BRD --contract docs/.audit/specify/run-001/generation-contract.json --work docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py begin --stage BRD --contract .blueprint/specify/run-001/generation-contract.json --work .blueprint/specify/run-001/package
 ```
 
 Примеры `run-001` — обозначения: для каждого запуска выбирай новый ID, не переиспользуй каталог. Все команды ниже принимают `--root`, если используется другой путь хранилища; глобальный --root ставится перед именем команды.
@@ -30,16 +30,16 @@ python .claude/skills/specify/scripts/specctl.py begin --stage BRD --contract do
 begin копирует текущую ревизию и контракт. В candidate.json добавь маленький согласованный блок сущностей, связей и текста. Сохрани существующие ID. Для перехода TRD→SAD и т. д. begin требует утверждения предыдущей текущей стадии и запрещает пропуск. Для обратного изменения используй текущую стадию, исправляя ранние сущности и зависимые документы в одном пакете.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py impact --package docs/.audit/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py check --package docs/.audit/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py prepare-review --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py impact --package .blueprint/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py check --package .blueprint/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py prepare-review --package .blueprint/specify/run-001/package
 ```
 
 impact сообщает изменённые сущности/рёбра и консервативное замыкание зависимостей, включая документы. Он не является сертификатом минимального scope.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py diff --package docs/.audit/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py show --package docs/.audit/specify/run-001/package FR-001 E-SC-001
+python .claude/skills/specify/scripts/specctl.py diff --package .blueprint/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py show --package .blueprint/specify/run-001/package FR-001 E-SC-001
 ```
 
 diff печатает изменения на уровне полей (новые и изменённые сущности с путями `data.<ключ>`, рёбра, разделы документов) относительно базы и, для пакета из `--from`, относительно предыдущего пакета. show печатает сущности или рёбра кандидата по ID; у сущности добавляется список инцидентных рёбер. Используй их вместо разовых скриптов сравнения и просмотра.
@@ -61,7 +61,7 @@ review-request фиксирует дайджесты источников нас
 prepare-review также делит рёбра UNKNOWN на шарды `shards/S-XX.json` — до 30 рёбер, сгруппированных по разделам документов. Шард самодостаточен для оценки своих рёбер: рёбра с причиной (`why`), полные сущности концов, поля, изменённые относительно базы, соседние связи того же уровня (новые — с rationale) и краткие формулировки оснований. Прежних оценок в нём нет. Нужное сверх шарда смотри через `show`, исходники — в sources. Ответ шарда записывается в `shards/S-XX.result.json` по его `result_template`; `notes` — кандидаты в findings для основного ревьюера. Шарды можно проходить последовательно или передать отдельным агентам, если это разрешено (SKILL.md).
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py assess --package docs/.audit/specify/run-001/package docs/.audit/specify/run-001/package/shards/S-01.result.json review-main.json
+python .claude/skills/specify/scripts/specctl.py assess --package .blueprint/specify/run-001/package .blueprint/specify/run-001/package/shards/S-01.result.json review-main.json
 ```
 
 assess вносит в review.json JSON-файлы оценок: `edges`, `criteria`, `formal`, `runtime`, `reviewer`, `findings` (замена по id) и необязательный `shard`. Для файла с `shard` принимаются только рёбра этого шарда. Каждая оценка — свежая `{status, reason, evidence}`: поля `inherited`/`context` и неизвестные ссылки отвергаются, PASS без evidence тоже. Команда проверяет актуальность identity, печатает применённое, оставшиеся UNKNOWN и notes. Это синтаксическая сборка, а не проверка качества ревью; полные gates даёт check. Используй assess вместо самописных скриптов, собирающих review.json.
@@ -69,14 +69,14 @@ assess вносит в review.json JSON-файлы оценок: `edges`, `crite
 Для исправленного кандидата создай новый пакет от непринятого:
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py begin --stage BRD --from docs/.audit/specify/run-001/package --work docs/.audit/specify/run-002/package
+python .claude/skills/specify/scripts/specctl.py begin --stage BRD --from .blueprint/specify/run-001/package --work .blueprint/specify/run-002/package
 ```
 
 `--from` требует ту же стадию и ту же базу, что у CURRENT; копирует candidate.json и contract.json (`--contract` заменяет контракт) и записывает источник в package.json. prepare-review переносит весь реестр findings этого пакета и открытые findings базы, check требует сохранить открытые из обоих. Старый пакет оставь для истории и не меняй: его правка лишает новый пакет унаследованных оценок. Если изменились CURRENT или policy, прежнее ревью устарело; при переносе на новую базу анализируй изменения обеих сторон, не копируй старый snapshot поверх новой ревизии целиком.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py check --package docs/.audit/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py accept --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py check --package .blueprint/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py accept --package .blueprint/specify/run-001/package
 python .claude/skills/specify/scripts/specctl.py status
 ```
 

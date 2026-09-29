@@ -2,10 +2,10 @@
 
 ## Рабочая папка и результаты
 
-Рабочая папка — `PROJECT_ROOT/docs/.audit/<UTC-run-id>/`. Создай её перед сбором входов. UTC-run-id обозначает один запуск; при совпадении имени добавь уникальный суффикс. Пример структуры:
+Рабочая папка — `PROJECT_ROOT/.blueprint/audit/<UTC-run-id>/`. Создай её перед сбором входов. UTC-run-id обозначает один запуск; при совпадении имени добавь уникальный суффикс. Пример структуры:
 
 ```text
-docs/.audit/<UTC-run-id>/
+.blueprint/audit/<UTC-run-id>/
   input.json       явный список исходных документов
   collected/       manifest.json и structural-checks.json от collect
   extracted/       текст, извлечённый из нетекстовых документов
@@ -13,13 +13,13 @@ docs/.audit/<UTC-run-id>/
   execution/       результаты команд и контрпримеров
 ```
 
-Подкаталоги создавай по необходимости. `collected/` заранее не создавай: его создаёт collect и отказывает, если он уже существует. Входной поиск по docs должен исключать `.audit/**`. Не используй рабочую папку как нормативный источник. При повторной проверке старую рабочую папку сохраняй, для нового запуска создавай новую.
+Подкаталоги создавай по необходимости. `collected/` заранее не создавай: его создаёт collect и отказывает, если он уже существует. Входной поиск должен исключать `.blueprint/**`. Не используй рабочую папку как нормативный источник. При повторной проверке старую рабочую папку сохраняй, для нового запуска создавай новую.
 
-Завершённый отчёт и реестры размещай в `outputs/audit/<UTC-run-id>/` или по явному указанию пользователя. Скопируй туда manifest.json, structural-checks.json и доказательства, на которые ссылается итоговый отчёт, сохраняя исходные хеши и привязки к документам. Итоговый комплект должен быть читаем без временной папки; промежуточные материалы автоматически не удаляй.
+Завершённый отчёт и реестры размещай в `.blueprint/outputs/audit/<UTC-run-id>/` или по явному указанию пользователя. Скопируй туда manifest.json, structural-checks.json и доказательства, на которые ссылается итоговый отчёт, сохраняя исходные хеши и привязки к документам. Итоговый комплект должен быть читаем без временной папки; промежуточные материалы автоматически не удаляй.
 
 ## Явный вход
 
-Создай UTF-8 JSON-конфигурацию `docs/.audit/<UTC-run-id>/input.json`. Пути документов относительно root, не относительно input.json и не абсолютные; namespace разделяет повторяющиеся ID разных продуктов. role и authority устанавливаются после чтения, а не по имени файла.
+Создай UTF-8 JSON-конфигурацию `.blueprint/audit/<UTC-run-id>/input.json`. Пути документов относительно root, не относительно input.json и не абсолютные; namespace разделяет повторяющиеся ID разных продуктов. role и authority устанавливаются после чтения, а не по имени файла.
 
 ```json
 {
@@ -34,8 +34,8 @@ docs/.audit/<UTC-run-id>/
 Выбери доступный `python`, `python3` или `py -3`. SKILL_DIR ниже — фактический каталог этого навыка, не обязательная переменная окружения; сформируй корректно экранированные аргументы для текущей оболочки. Не подставляй сырой текст запроса в shell.
 
 ```text
-python SKILL_DIR/scripts/audit_support.py collect --root PROJECT_ROOT --config PROJECT_ROOT/docs/.audit/RUN_ID/input.json --out PROJECT_ROOT/docs/.audit/RUN_ID/collected
-python SKILL_DIR/scripts/audit_support.py verify --root PROJECT_ROOT --manifest PROJECT_ROOT/docs/.audit/RUN_ID/collected/manifest.json
+python SKILL_DIR/scripts/audit_support.py collect --root PROJECT_ROOT --config PROJECT_ROOT/.blueprint/audit/RUN_ID/input.json --out PROJECT_ROOT/.blueprint/audit/RUN_ID/collected
+python SKILL_DIR/scripts/audit_support.py verify --root PROJECT_ROOT --manifest PROJECT_ROOT/.blueprint/audit/RUN_ID/collected/manifest.json
 python SKILL_DIR/scripts/audit_support.py compare --previous OLD/manifest.json --current NEW/manifest.json
 ```
 
@@ -51,7 +51,7 @@ python SKILL_DIR/scripts/audit_support.py compare --previous OLD/manifest.json -
 
 ## Полный результат аудита
 
-Создай в итоговом каталоге `outputs/audit/<UTC-run-id>/` (или выбранном пользователем месте), рядом с копиями manifest.json и structural-checks.json:
+Создай в итоговом каталоге `.blueprint/outputs/audit/<UTC-run-id>/` (или выбранном пользователем месте), рядом с копиями manifest.json и structural-checks.json:
 
 1. `report.md`: scope, версии/хеши, краткий итог, десять критериев, поэтапные и сквозные gates, находки с источниками, непроверенное, приоритет исправлений и условия перепроверки.
 2. `findings.json`: подтверждённые находки и явно отделённые гипотезы.

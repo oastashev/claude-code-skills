@@ -48,7 +48,7 @@ Change завершён, когда архивирован в OpenSpec. Реше
 
 ## Публикация
 
-Результаты: `openspec/changes/<id>/`, `docs/materialize/roadmap.json`, `docs/materialize/reviews/<id>.json`, `docs/08-materialize.md` — читаемое представление. Вывод check сохраняй в `docs/.audit/materialize/<run-id>/check.json`.
+Результаты: `openspec/changes/<id>/`, `docs/materialize/roadmap.json`, `docs/materialize/reviews/<id>.json`, `docs/08-materialize.md` — читаемое представление. Вывод check сохраняй в `.blueprint/materialize/<run-id>/check.json`.
 
 Перед заменой файла сравни его хеш с прочитанным, не затирай внешние изменения. JSON пиши через временный файл и замену. Коммить только известные созданные/изменённые пути, не пушь.
 

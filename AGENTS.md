@@ -13,7 +13,7 @@
 - `scripts/` — Python CLI и тесты рядом с ними.
 - `kickoff/templates/` — инструкции, переносимые в целевой проект.
 
-Каталоги `docs/specification/`, `docs/kickoff/`, `docs/materialize/` и `openspec/`, упоминаемые
+Каталоги `docs/specification/`, `docs/kickoff/`, `docs/materialize/`, `.blueprint/` и `openspec/`, упоминаемые
 скилами, относятся к целевым проектам. Не создавай их здесь и не запускай
 пайплайн при обычном сопровождении marketplace.
 
