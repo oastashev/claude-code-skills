@@ -29,11 +29,11 @@ implementation plan and an OpenSpec repository with changes ready to implement:
 flowchart TB
   idea([App idea]) --> explore["/explore"]
   explore -->|writes| X["docs/00-exploration.md"]
-  X -->|"READY + approved"| assemble["/assemble<br/>BRD → TRD → SAD → SDD → DDD<br/>package → review → accept → approve"]
-  assemble -->|publishes| S["docs/01-BRD.md … 05-DDD.md<br/>docs/specification/ (CURRENT)"]
+  X -->|"READY + approved"| specify["/specify<br/>BRD → TRD → SAD → SDD → DDD<br/>package → review → accept → approve"]
+  specify -->|publishes| S["docs/01-BRD.md … 05-DDD.md<br/>docs/specification/ (CURRENT)"]
   S -->|current revision| audit["/audit"]
   audit -->|writes| R["outputs/audit/run-id/<br/>report · gates · findings · unknowns"]
-  R -.->|"findings → /assemble change"| assemble
+  R -.->|"findings → /specify change"| specify
   S -->|"DDD approved"| kickoff["/kickoff"]
   R -->|"required gates PASS"| kickoff
   kickoff -->|writes| K["docs/kickoff/ plan · baseline · review · approval<br/>docs/07-kickoff.md · docs/init-kickoff.md"]
@@ -52,7 +52,7 @@ next one automatically.
 | Skill | Command | Purpose |
 |---|---|---|
 | explore | `/explore` | Brainstorm and scope the idea → `docs/00-exploration.md` |
-| assemble | `/assemble` | Build BRD/TRD/SAD/SDD/DDD documents one by one, with approval gates |
+| specify | `/specify` | Build BRD/TRD/SAD/SDD/DDD documents one by one, with approval gates |
 | audit | `/audit` | Check documentation completeness, traceability and EARS compliance |
 | kickoff | `/kickoff` | Write the launch plan `docs/07-kickoff.md` (deployment order, change roadmap starting with a walking skeleton, parallelism analysis — execution waves, critical path and estimated time saving, human checkpoints, audit conditions) and copy an agent-neutral init instruction into `docs/` |
 | materialize | `/materialize` | In the app repository after init, one run = one decision: create the next OpenSpec change whose dependencies are archived (proposal, spec deltas preserving requirement meaning, design, tasks), wait for the current changes, or report the plan complete. Refines dependencies from the actual code and specs, checks them against the approved waves and analyses parallelism for 1/2/4 workers → `docs/materialize/roadmap.json`, `docs/08-materialize.md` |
@@ -63,7 +63,7 @@ The init instruction is a template from [skills/kickoff/templates/](plugins/app-
 |---|---|---|
 | `docs/init-kickoff.md` | "execute docs/init-kickoff.md" in the cloned repo | Check the approved plan, initialise OpenSpec and only the agent integrations the project uses, write `AGENTS.md` with the project's actual architecture and commands, record the OpenSpec CLI version, schema and commands in `docs/kickoff/adapter.json`, commit known paths |
 
-Init only prepares the repository: it creates no OpenSpec changes, design/tasks or execution state. `/materialize` then turns the approved plan into OpenSpec changes, one per run. A change counts as done once it is archived; each run creates the next change whose dependencies are all archived, otherwise it reports which changes it is waiting for, or that every change of the plan is archived. Applying changes is a separate, self-contained process: its `max_workers` and execution mode do not gate materialize. Materialize asks no questions: the plan stays authoritative for slices, dependencies, waves and execution mode, dependencies found in the repository that agree with the approved order are recorded as refinements, and defects or contradictions block the run until `/kickoff revise` (or assemble and a new audit). Materialize does not implement or archive changes.
+Init only prepares the repository: it creates no OpenSpec changes, design/tasks or execution state. `/materialize` then turns the approved plan into OpenSpec changes, one per run. A change counts as done once it is archived; each run creates the next change whose dependencies are all archived, otherwise it reports which changes it is waiting for, or that every change of the plan is archived. Applying changes is a separate, self-contained process: its `max_workers` and execution mode do not gate materialize. Materialize asks no questions: the plan stays authoritative for slices, dependencies, waves and execution mode, dependencies found in the repository that agree with the approved order are recorded as refinements, and defects or contradictions block the run until `/kickoff revise` (or specify and a new audit). Materialize does not implement or archive changes.
 
 See [plugins/app-pipeline/skills/](plugins/app-pipeline/skills/) for each skill's full instructions.
 

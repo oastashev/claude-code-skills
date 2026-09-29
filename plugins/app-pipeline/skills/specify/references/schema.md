@@ -17,7 +17,7 @@ docs/specification/
     RTM.md                        # производное представление графа
   approvals/<event-id>.json        # запись явного утверждения пользователя
   DOCS-PENDING.json                # только во время незавершённой публикации
-docs/.audit/assemble/<run-id>/
+docs/.audit/specify/<run-id>/
   package.json                    # база CURRENT, целевая стадия, ID пакета, from (пакет-предшественник)
   contract.json
   candidate.json

@@ -7,8 +7,8 @@
 Обязательный вход — `docs/00-exploration.md`, результат `/explore`. Это исходный документ вне хранилища спецификации. При другом расположении передай `init --exploration <путь-к-00-exploration.md>`; при нестандартном --root путь по умолчанию ищется рядом с каталогом хранилища. Без файла или с пустым/не-UTF-8 файлом инициализация завершается ошибкой до создания хранилища. Утверждение и смысловую достаточность exploration проверяет исполнитель скила, а не парсер заголовка.
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py --root docs/specification init
-python .claude/skills/assemble/scripts/specctl.py --root docs/specification source --file additional-context.md --id SRC-001
+python .claude/skills/specify/scripts/specctl.py --root docs/specification init
+python .claude/skills/specify/scripts/specctl.py --root docs/specification source --file additional-context.md --id SRC-001
 ```
 
 init требует новый каталог; существующий не очищается. Начальная ревизия содержит `SRC-EXPLORATION` и неизменный снимок исходного файла; документов BRD–DDD в ней ещё нет. Она не означает успешную проверку или утверждение создаваемой спецификации. source используется для дополнительных материалов: сохраняет байты UTF-8 файла под SHA-256 и печатает JSON сущности. Вставь эту сущность в кандидат, сохраняя уже имеющийся SRC-EXPLORATION. Статус нормативности и scope опиши в statement/data: импорт файла сам по себе не делает все его предложения требованиями.
@@ -19,10 +19,10 @@ policy.json заполняется до первого смыслового ре
 
 ## Пакет
 
-Создай новый `docs/.audit/assemble/<run-id>/` для вспомогательных файлов. Подготовь generation-contract.json по assets/contract.json, затем выбери ещё не существующий дочерний каталог package:
+Создай новый `docs/.audit/specify/<run-id>/` для вспомогательных файлов. Подготовь generation-contract.json по assets/contract.json, затем выбери ещё не существующий дочерний каталог package:
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py begin --stage BRD --contract docs/.audit/assemble/run-001/generation-contract.json --work docs/.audit/assemble/run-001/package
+python .claude/skills/specify/scripts/specctl.py begin --stage BRD --contract docs/.audit/specify/run-001/generation-contract.json --work docs/.audit/specify/run-001/package
 ```
 
 Примеры `run-001` — обозначения: для каждого запуска выбирай новый ID, не переиспользуй каталог. Все команды ниже принимают `--root`, если используется другой путь хранилища; глобальный --root ставится перед именем команды.
@@ -30,16 +30,16 @@ python .claude/skills/assemble/scripts/specctl.py begin --stage BRD --contract d
 begin копирует текущую ревизию и контракт. В candidate.json добавь маленький согласованный блок сущностей, связей и текста. Сохрани существующие ID. Для перехода TRD→SAD и т. д. begin требует утверждения предыдущей текущей стадии и запрещает пропуск. Для обратного изменения используй текущую стадию, исправляя ранние сущности и зависимые документы в одном пакете.
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py impact --package docs/.audit/assemble/run-001/package
-python .claude/skills/assemble/scripts/specctl.py check --package docs/.audit/assemble/run-001/package
-python .claude/skills/assemble/scripts/specctl.py prepare-review --package docs/.audit/assemble/run-001/package
+python .claude/skills/specify/scripts/specctl.py impact --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py check --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py prepare-review --package docs/.audit/specify/run-001/package
 ```
 
 impact сообщает изменённые сущности/рёбра и консервативное замыкание зависимостей, включая документы. Он не является сертификатом минимального scope.
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py diff --package docs/.audit/assemble/run-001/package
-python .claude/skills/assemble/scripts/specctl.py show --package docs/.audit/assemble/run-001/package FR-001 E-SC-001
+python .claude/skills/specify/scripts/specctl.py diff --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py show --package docs/.audit/specify/run-001/package FR-001 E-SC-001
 ```
 
 diff печатает изменения на уровне полей (новые и изменённые сущности с путями `data.<ключ>`, рёбра, разделы документов) относительно базы и, для пакета из `--from`, относительно предыдущего пакета. show печатает сущности или рёбра кандидата по ID; у сущности добавляется список инцидентных рёбер. Используй их вместо разовых скриптов сравнения и просмотра.
@@ -58,15 +58,15 @@ review-request фиксирует дайджесты источников нас
 Для исправленного кандидата создай новый пакет от непринятого:
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py begin --stage BRD --from docs/.audit/assemble/run-001/package --work docs/.audit/assemble/run-002/package
+python .claude/skills/specify/scripts/specctl.py begin --stage BRD --from docs/.audit/specify/run-001/package --work docs/.audit/specify/run-002/package
 ```
 
 `--from` требует ту же стадию и ту же базу, что у CURRENT; копирует candidate.json и contract.json (`--contract` заменяет контракт) и записывает источник в package.json. prepare-review переносит весь реестр findings этого пакета и открытые findings базы, check требует сохранить открытые из обоих. Старый пакет оставь для истории и не меняй: его правка лишает новый пакет унаследованных оценок. Если изменились CURRENT или policy, прежнее ревью устарело; при переносе на новую базу анализируй изменения обеих сторон, не копируй старый snapshot поверх новой ревизии целиком.
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py check --package docs/.audit/assemble/run-001/package
-python .claude/skills/assemble/scripts/specctl.py accept --package docs/.audit/assemble/run-001/package
-python .claude/skills/assemble/scripts/specctl.py status
+python .claude/skills/specify/scripts/specctl.py check --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py accept --package docs/.audit/specify/run-001/package
+python .claude/skills/specify/scripts/specctl.py status
 ```
 
 check до ревью показывает mechanical и semantic=UNKNOWN. После появления review.json проверяет документный/formal/runtime gates и актуальность identity. accept повторяет проверку под блокировкой, публикует только PASS, выдаёт ID ревизии. Актуальные документы находятся в docs/01-BRD.md…05-DDD.md; status возвращает их пути в documents, а архив ревизии — в artifacts. При другом --root документы находятся рядом с каталогом хранилища. accepted не равно approved.
@@ -78,7 +78,7 @@ check до ревью показывает mechanical и semantic=UNKNOWN. По�
 После принятия этого пакета покажи конкретную ревизию пользователю. Только получив утверждение, запиши его:
 
 ```bash
-python .claude/skills/assemble/scripts/specctl.py approve --stage BRD --decision "Ссылка на фактический ответ пользователя и его точная формулировка"
+python .claude/skills/specify/scripts/specctl.py approve --stage BRD --decision "Ссылка на фактический ответ пользователя и его точная формулировка"
 ```
 
 Эта команда **регистрирует**, а не получает согласие пользователя. Не подставляй пример из инструкции вместо реального решения. Скрипт не может аутентифицировать автора строки. Для обратных правок отдельно назови все затронутые ранние документы; можно записать несколько утверждений одной принятой ревизии. Переход вперёд требует утверждения её текущей стадии.
@@ -99,7 +99,7 @@ python .claude/skills/assemble/scripts/specctl.py approve --stage BRD --decision
 
 Сначала пишутся файлы новой ревизии и manifest, затем журнал DOCS-PENDING.json. После проверки всех путей назначения каждый актуальный docs/01-BRD.md…05-DDD.md заменяется через os.replace, затем переключается CURRENT и удаляется журнал. Замена всего набора файлов не атомарна: пока журнал существует, CLI блокирует чтение согласованного состояния и следующие пакеты. Для стороннего читателя перед чтением нескольких документов требуется успешный status и отсутствие активного писателя; архив выбранной ревизии остаётся неизменным. WRITE.lock запрещает конкурентную публикацию через этот CLI; base предотвращает потерю чужой принятой работы. Это не распределённое хранилище и не гарантия сохранности при физической потере диска. Хеши выявляют случайную правку, но не являются подписью против злоумышленника.
 
-После аварии возможны незавершённый каталог ревизии, временные файлы, DOCS-PENDING.json или оставшийся WRITE.lock. Не объявляй самый новый каталог принятым. Зафиксируй состояние, проверь отсутствие живого процесса-писателя, сохрани копию материалов. Только после установления причины вручную убери оставшуюся блокировку. При наличии журнала выполни `python .claude/skills/assemble/scripts/specctl.py sync-docs`: команда проверяет новую ревизию и все назначения, завершает публикацию и переключает CURRENT. Она принимает только прежние/новые ожидаемые байты, а при посторонней правке останавливается. Без журнала sync-docs восстанавливает отсутствующие актуальные документы из CURRENT, но не затирает изменённые. Затем проверь status. Автоматического удаления lock по времени нет.
+После аварии возможны незавершённый каталог ревизии, временные файлы, DOCS-PENDING.json или оставшийся WRITE.lock. Не объявляй самый новый каталог принятым. Зафиксируй состояние, проверь отсутствие живого процесса-писателя, сохрани копию материалов. Только после установления причины вручную убери оставшуюся блокировку. При наличии журнала выполни `python .claude/skills/specify/scripts/specctl.py sync-docs`: команда проверяет новую ревизию и все назначения, завершает публикацию и переключает CURRENT. Она принимает только прежние/новые ожидаемые байты, а при посторонней правке останавливается. Без журнала sync-docs восстанавливает отсутствующие актуальные документы из CURRENT, но не затирает изменённые. Затем проверь status. Автоматического удаления lock по времени нет.
 
 Если docs/01-BRD.md…05-DDD.md существовали ещё до первой публикации, accept не перезаписывает их. Сначала сохрани и согласуй их как входящие материалы. Ручная правка актуального документа также блокирует status/accept: сохрани её, восстанови точную прежнюю публикацию из архива и внеси правку новым пакетом. Нельзя менять manifest-хеши ради обхода защиты.
 
@@ -108,7 +108,7 @@ python .claude/skills/assemble/scripts/specctl.py approve --stage BRD --decision
 ## Валидация поставки
 
 ```bash
-python -B -X utf8 -m unittest discover -s .claude/skills/assemble/scripts -p test_specctl.py -v
+python -B -X utf8 -m unittest discover -s .claude/skills/specify/scripts -p test_specctl.py -v
 ```
 
 Тесты используют временные изолированные каталоги и синтетические оценки. Они проверяют принятие, актуальность, конфликты, gates и сохранность публикации, но не качество будущего LLM-ревью. Фактический независимый прогон Claude Code оценивается отдельно на репрезентативном проекте.

@@ -4,7 +4,7 @@
 
 Это marketplace плагинов Claude Code, а не приложение, создаваемое этими
 плагинами. Основной плагин `app-pipeline` проводит пользователя через
-`explore → assemble → audit → kickoff → materialize`.
+`explore → specify → audit → kickoff → materialize`.
 
 - `.claude-plugin/marketplace.json` — каталог плагинов.
 - `plugins/app-pipeline/.claude-plugin/plugin.json` — манифест плагина.
@@ -58,7 +58,7 @@
 Команды выполняются из корня репозитория; требуется Python 3.10+.
 
 ```sh
-python -m unittest discover -s plugins/app-pipeline/skills/assemble/scripts -p "test_*.py"
+python -m unittest discover -s plugins/app-pipeline/skills/specify/scripts -p "test_*.py"
 python -m unittest discover -s plugins/app-pipeline/skills/audit/scripts -p "test_*.py"
 python -m unittest discover -s plugins/app-pipeline/skills/kickoff/scripts -p "test_*.py"
 python -m unittest discover -s plugins/app-pipeline/skills/materialize/scripts -p "test_*.py"

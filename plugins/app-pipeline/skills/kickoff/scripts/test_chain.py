@@ -1,7 +1,7 @@
 """Repository integration fixtures; synthetic reviews/consent, never LLM evidence.
 
 Run with unittest discover in this directory. Standalone kickoff installations
-without adjacent assemble/audit skills skip these repository integration tests.
+without adjacent specify/audit skills skip these repository integration tests.
 """
 import contextlib
 import importlib.util
@@ -22,9 +22,9 @@ def module(name, relative):
 
 
 AVAILABLE = all((SKILLS / p).is_file() for p in
-                ('assemble/scripts/specctl.py', 'audit/scripts/audit_support.py'))
+                ('specify/scripts/specctl.py', 'audit/scripts/audit_support.py'))
 if AVAILABLE:
-    s = module('chain_specctl', 'assemble/scripts/specctl.py')
+    s = module('chain_specctl', 'specify/scripts/specctl.py')
     a = module('chain_audit', 'audit/scripts/audit_support.py')
     k = module('chain_planctl', 'kickoff/scripts/planctl.py')
 
@@ -168,7 +168,7 @@ class ChainTests(unittest.TestCase):
         self.assertTrue(self.call('status')['approved'])
         self.assertEqual(k.check(self.root, path, True)[1], 0)
 
-    def test_repair_through_assemble_then_reaudit_invalidates_old_plan(self):
+    def test_repair_through_specify_then_reaudit_invalidates_old_plan(self):
         self.build()
         old_path, _, old_audit = self.audit_plan()
         old_revision = s.current(self.store)

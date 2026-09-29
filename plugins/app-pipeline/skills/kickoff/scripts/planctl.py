@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 
 CRITERIA = ('baseline scope atomicity completeness consistency verifiability '
             'feasibility contracts traceability assumptions').split()
-# Document names published by assemble next to its store.
+# Document names published by specify next to its store.
 SPECIFICATION_DOCUMENTS = ('01-BRD.md', '02-TRD.md', '03-SAD.md', '04-SDD.md', '05-DDD.md')
 
 
@@ -196,7 +196,7 @@ def check(root, plan_path, execution=False):
     current = store / 'CURRENT'
     need(current.is_file() and current.read_text(encoding='utf-8').strip() == plan['revision'],
          'CURRENT revision mismatch')
-    need(any(p.parent == store / 'approvals' for p in bound_paths), 'No bound assemble approval')
+    need(any(p.parent == store / 'approvals' for p in bound_paths), 'No bound specify approval')
     snap = read(snap_path)
     need(snap['schema'] == 1 and snap['stage'] == 'DDD', 'DDD snapshot required')
     entities = snap['entities']
@@ -233,7 +233,7 @@ def check(root, plan_path, execution=False):
         if entity['kind'] == 'source':
             need((store / 'sources' / (entity['data']['sha256'] + '.txt')).resolve() in audited,
                  'Specification source absent from audit')
-    need(any(p.parent == store / 'approvals' for p in audited), 'No assemble approval in audit')
+    need(any(p.parent == store / 'approvals' for p in audited), 'No specify approval in audit')
 
     gates = read(path(root, plan['audit_gates']))
     need(gates['schema_version'] == 1, 'Audit schema unsupported')

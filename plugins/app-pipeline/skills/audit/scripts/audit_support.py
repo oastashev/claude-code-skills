@@ -14,7 +14,7 @@ from pathlib import Path
 
 DEFAULT_PREFIXES = ['CAP', 'US', 'BR', 'FR', 'NFR', 'C', 'M', 'CH', 'T']
 TEXT_EXTENSIONS = {'.md', '.markdown', '.txt'}
-# Document names published by assemble next to its store.
+# Document names published by specify next to its store.
 SPECIFICATION_DOCUMENTS = {'BRD': '01-BRD.md', 'TRD': '02-TRD.md', 'SAD': '03-SAD.md',
                            'SDD': '04-SDD.md', 'DDD': '05-DDD.md'}
 
@@ -112,7 +112,7 @@ def index_lines(lines, prefixes):
 
 
 def specification_inputs(root, binding):
-    """Bind a current assemble revision without importing its executable code."""
+    """Bind a current specify revision without importing its executable code."""
     store = input_path(root, binding['store'])
     revision = binding['revision']
     if not isinstance(revision, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,79}', revision):
