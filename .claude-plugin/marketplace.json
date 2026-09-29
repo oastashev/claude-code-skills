@@ -12,7 +12,7 @@
       "source": "./plugins/blueprint",
       "displayName": "Blueprint",
       "description": "Five-step pipeline (explore → specify → audit → kickoff → materialize) for turning a high-level app idea into audited requirements/design docs, a launch plan with an agent-neutral init-kickoff instruction that sets up an OpenSpec-ready repository, and OpenSpec changes with a dependency-checked implementation order and parallelism analysis.",
-      "version": "2.0.0"
+      "version": "3.0.0"
     }
   ]
 }

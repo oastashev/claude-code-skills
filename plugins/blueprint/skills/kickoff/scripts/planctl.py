@@ -10,8 +10,8 @@ from pathlib import Path, PurePosixPath
 
 CRITERIA = ('baseline scope atomicity completeness consistency verifiability '
             'feasibility contracts traceability assumptions').split()
-# Document names published by specify next to its store.
-SPECIFICATION_DOCUMENTS = ('01-BRD.md', '02-TRD.md', '03-SAD.md', '04-SDD.md', '05-DDD.md')
+# Document names published by specify next to its store, by stage; ARCH exists only in the extended profile.
+SPECIFICATION_DOCUMENTS = {'REQ': '01-requirements.md', 'ARCH': '02-architecture.md', 'DESIGN': '03-design.md'}
 
 
 def digest(path):
@@ -173,7 +173,7 @@ def check(root, plan_path, execution=False):
         need(set(values) <= set(allowed), label + ': unknown reference')
         return set(values)
 
-    need(plan['schema'] == 1 and baseline['schema'] == 1, 'Unsupported schema')
+    need(plan['schema'] == 2 and baseline['schema'] == 1, 'Unsupported schema')
     need(nonempty(plan['id']) and nonempty(plan['revision']), 'Missing identity')
     need(bool(baseline['files']), 'Empty baseline')
     for name, expected in baseline['files'].items():
@@ -186,9 +186,13 @@ def check(root, plan_path, execution=False):
     store = snap_path.parent.parent.parent
     need(not (store / 'DOCS-PENDING.json').exists(), 'Specification publication pending')
     bound_paths = {path(root, name) for name in baseline['files']}
+    snap = read(snap_path)
+    need(snap['schema'] == 2 and snap['stage'] == 'DESIGN', 'DESIGN snapshot of specify schema 2 required')
+    stages = set(snap.get('documents', {}))
+    need({'REQ', 'DESIGN'} <= stages <= SPECIFICATION_DOCUMENTS.keys(), 'Specification documents must be REQ, optional ARCH and DESIGN')
     required_paths = [store / 'CURRENT', store / 'policy.json',
                       snap_path.parent / 'manifest.json', snap_path.parent / 'review.json']
-    required_paths += [store.parent / name for name in SPECIFICATION_DOCUMENTS]
+    required_paths += [store.parent / name for stage, name in SPECIFICATION_DOCUMENTS.items() if stage in stages]
     exploration = path(root, plan.get('exploration', (store.parent / '00-exploration.md').relative_to(root).as_posix()))
     required_paths.append(exploration)
     for required in required_paths:
@@ -197,8 +201,6 @@ def check(root, plan_path, execution=False):
     need(current.is_file() and current.read_text(encoding='utf-8').strip() == plan['revision'],
          'CURRENT revision mismatch')
     need(any(p.parent == store / 'approvals' for p in bound_paths), 'No bound specify approval')
-    snap = read(snap_path)
-    need(snap['schema'] == 1 and snap['stage'] == 'DDD', 'DDD snapshot required')
     entities = snap['entities']
     exploration_source = entities.get(plan.get('exploration_source', 'SRC-EXPLORATION'), {})
     need(exploration_source.get('kind') == 'source' and exploration_source.get('status') == 'active',
@@ -261,7 +263,7 @@ def check(root, plan_path, execution=False):
         for key in ('outcome', 'rationale', 'independence'):
             need(nonempty(c[key]), cid + ': empty ' + key)
         refs(c['basis'], active, cid + '.basis', True)
-        for key, kind in (('contracts', 'contract'), ('tasks', 'task')):
+        for key, kind in (('contracts', 'contract'), ('modules', 'module')):
             refs(c[key], {k for k, v in active.items() if v['kind'] == kind}, cid + '.' + key)
         reqs = refs(c['requirements'], obligations, cid + '.requirements', True)
         scs = refs(c['scenarios'], scenarios, cid + '.scenarios', True)

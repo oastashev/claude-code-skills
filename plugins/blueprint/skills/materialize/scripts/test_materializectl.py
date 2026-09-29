@@ -18,7 +18,7 @@ class MaterializeTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.put('openspec/specs/collections/spec.md', SPEC.format(cap='collections', name='Store collection'))
-        self.plan = {'schema': 1, 'changes': [
+        self.plan = {'schema': 2, 'changes': [
             {'id': cid, 'wave': wave, 'depends_on': deps, 'writes': ['src/' + cid + '.py']}
             for cid, wave, deps in [('foundation', 0, []), ('export', 1, ['foundation']),
                                     ('search', 2, ['foundation']), ('integration', 3, ['export', 'search'])]],
@@ -102,6 +102,13 @@ class MaterializeTests(unittest.TestCase):
                          'integration')
         done = {c['id']: 'archived' for c in self.plan['changes']}
         self.assertEqual(self.next(done)['action'], 'complete')
+
+    def test_released_plan_of_previous_schema_still_runs(self):
+        self.plan['schema'] = 1
+        self.assertEqual(self.next({})['change'], 'foundation')
+        self.plan['schema'] = 3
+        self.build({})
+        self.assertIn('Unsupported schema', self.check()[0]['errors'])
 
     def test_creation_ignores_max_workers_and_later_waves(self):
         # Sequential plan, max_workers=1: execution capacity does not gate materialize.

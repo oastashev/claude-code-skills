@@ -118,17 +118,21 @@ class AuditSupportTests(unittest.TestCase):
         folder.mkdir(parents=True)
         (store / 'CURRENT').write_text('r1', encoding='utf-8')
         (store / 'policy.json').write_text('{}', encoding='utf-8')
-        for name, body in [('snapshot.json', '{"entities":{},"documents":{"BRD":{}}}'),
-                           ('review.json', '{}'), ('RTM.md', '# RTM'), ('01-BRD.md', '# BRD')]:
+        for name, body in [('snapshot.json', '{"entities":{},"documents":{"REQ":{},"DESIGN":{}}}'),
+                           ('review.json', '{}'), ('RTM.md', '# RTM'), ('01-requirements.md', '# REQ'), ('03-design.md', '# DESIGN')]:
             (folder / name).write_text(body, encoding='utf-8')
-        (store.parent / '01-BRD.md').write_text('# BRD', encoding='utf-8')
+        (store.parent / '01-requirements.md').write_text('# REQ', encoding='utf-8')
+        (store.parent / '03-design.md').write_text('# DESIGN', encoding='utf-8')
         hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.iterdir()}
         (folder / 'manifest.json').write_text(json.dumps({'revision': 'r1', 'files': hashes}), encoding='utf-8')
-        config = self.config([{'path': 'docs/01-BRD.md', 'role': 'BRD'}])
-        config.write_text(json.dumps({'documents': [{'path': 'docs/01-BRD.md', 'role': 'BRD'}],
+        config = self.config([{'path': 'docs/01-requirements.md', 'role': 'requirements'}])
+        config.write_text(json.dumps({'documents': [{'path': 'docs/01-requirements.md', 'role': 'requirements'}],
                                      'specification': {'store': 'docs/specification', 'revision': 'r1'}}), encoding='utf-8')
         collect(self.root, config, self.root / 'run')
         manifest = self.root / 'run/manifest.json'
+        paths = {d['path'] for d in json.loads(manifest.read_text(encoding='utf-8'))['documents']}
+        self.assertIn('docs/03-design.md', paths)
+        self.assertNotIn('docs/02-architecture.md', paths)
         self.assertEqual(verify(self.root, manifest)[0], 0)
         (store / 'DOCS-PENDING.json').write_text('{}', encoding='utf-8')
         self.assertEqual(verify(self.root, manifest)[0], 2)

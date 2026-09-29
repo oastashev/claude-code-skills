@@ -13,9 +13,10 @@ class PlanTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.snapshot_path = 'docs/specification/revisions/r1/snapshot.json'
-        self.snapshot = {'schema': 1, 'stage': 'DDD', 'entities': {
+        self.snapshot = {'schema': 2, 'stage': 'DESIGN', 'documents': {'REQ': {}, 'DESIGN': {}}, 'entities': {
             'O': {'kind': 'obligation', 'status': 'active'},
             'S': {'kind': 'scenario', 'status': 'active'},
+            'M': {'kind': 'module', 'status': 'active'},
         }}
         self.put(self.snapshot_path, self.snapshot)
         self.put('audit/gates.json', {'schema_version': 1, 'gates': [
@@ -25,7 +26,7 @@ class PlanTests(unittest.TestCase):
         for name in ['docs/specification/policy.json', 'docs/specification/revisions/r1/manifest.json',
                      'docs/specification/revisions/r1/review.json', 'docs/specification/approvals/a.json']:
             self.put(name, {})
-        for name in ('00-exploration', '01-BRD', '02-TRD', '03-SAD', '04-SDD', '05-DDD'):
+        for name in ('00-exploration', '01-requirements', '03-design'):
             self.put('docs/' + name + '.md', name, raw=True)
         sha = planctl.digest(self.root / 'docs/00-exploration.md')
         self.put('docs/specification/sources/' + sha + '.txt', '00-exploration', raw=True)
@@ -35,14 +36,14 @@ class PlanTests(unittest.TestCase):
         paths = [p.relative_to(self.root).as_posix() for p in self.root.rglob('*') if p.is_file()]
         self.baseline = {'schema': 1, 'files': {p: planctl.digest(self.root / p) for p in paths}}
         self.refresh_audit()
-        self.plan = {'schema': 1, 'id': 'mvp', 'revision': 'r1',
+        self.plan = {'schema': 2, 'id': 'mvp', 'revision': 'r1',
                      'baseline': 'docs/kickoff/baseline.json', 'snapshot': self.snapshot_path,
                      'audit_gates': 'audit/gates.json', 'audit_manifest': 'audit/manifest.json',
                      'scope': {'goal': 'Useful result', 'phase': 'MVP', 'basis': ['O']},
                      'requirements': {'O': {'disposition': 'include', 'reason': 'Core', 'basis': ['O'],
                                            'owners': ['first'], 'applies_to': ['first'], 'scenarios': ['S']}},
                      'changes': [{'id': 'first', 'outcome': 'Result', 'rationale': 'Core', 'basis': ['O'],
-                                  'contracts': [], 'tasks': [], 'requirements': ['O'], 'scenarios': ['S'],
+                                  'contracts': [], 'modules': ['M'], 'requirements': ['O'], 'scenarios': ['S'],
                                   'depends_on': [], 'wave': 0, 'writes': ['src/a.py'], 'independence': 'Sequential',
                                   'checks': [{'scenario': 'S', 'method': 'Test', 'expected': 'Result'}]}],
                      'conditions': [], 'execution': {'mode': 'sequential', 'max_workers': 1},
@@ -110,8 +111,31 @@ class PlanTests(unittest.TestCase):
 
     def test_baseline_drift(self):
         self.approve()
-        self.put('docs/02-TRD.md', 'Changed', raw=True)
+        self.put('docs/03-design.md', 'Changed', raw=True)
         self.assertEqual(self.run_check()[0]['readiness'], 'FAIL')
+
+    def test_plan_of_five_stage_specification_is_rejected(self):
+        self.plan['schema'] = 1
+        self.save()
+        self.assertIn('Unsupported schema', self.run_check()[0]['errors'])
+
+    def test_change_references_modules_of_the_design(self):
+        self.plan['changes'][0]['modules'] = ['O']
+        self.save()
+        self.assertIn('first.modules: unknown reference', self.run_check()[0]['errors'])
+
+    def test_extended_specification_binds_architecture_document(self):
+        self.snapshot['documents']['ARCH'] = {}
+        self.put(self.snapshot_path, self.snapshot)
+        self.baseline['files'][self.snapshot_path] = planctl.digest(self.root / self.snapshot_path)
+        self.refresh_audit()
+        errors = self.run_check()[0]['errors']
+        self.assertTrue(any(e.startswith('Required baseline input absent') and e.endswith('02-architecture.md') for e in errors), errors)
+        self.put('docs/02-architecture.md', '02-architecture', raw=True)
+        self.baseline['files']['docs/02-architecture.md'] = planctl.digest(self.root / 'docs/02-architecture.md')
+        self.refresh_audit()
+        self.approve()
+        self.assertEqual(self.run_check(True)[1], 0)
 
     def test_pending_publication(self):
         self.approve()
@@ -168,7 +192,7 @@ class PlanTests(unittest.TestCase):
                 planctl.path(self.root, value)
 
     def test_lock_refuses_overwrite(self):
-        self.put('inputs.json', ['docs/02-TRD.md'])
+        self.put('inputs.json', ['docs/03-design.md'])
         args = ['lock', '--root', str(self.root), '--files', 'inputs.json', '--out', 'locked.json']
         self.assertEqual(planctl.main(args), 0)
         original = (self.root / 'locked.json').read_bytes()

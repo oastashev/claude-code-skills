@@ -31,12 +31,12 @@ the app.
 flowchart TB
   idea([App idea]) --> explore["/explore"]
   explore -->|writes| X["docs/00-exploration.md"]
-  X -->|"READY + approved"| specify["/specify<br/>BRD → TRD → SAD → SDD → DDD<br/>package → review → accept → approve"]
-  specify -->|publishes| S["docs/01-BRD.md … 05-DDD.md<br/>docs/specification/ (CURRENT)"]
+  X -->|"READY + approved"| specify["/specify<br/>REQ → DESIGN (extended: REQ → ARCH → DESIGN)<br/>package → review → accept → approve"]
+  specify -->|publishes| S["docs/01-requirements.md · 03-design.md<br/>(+ 02-architecture.md in extended)<br/>docs/specification/ (CURRENT)"]
   S -->|current revision| audit["/audit"]
   audit -->|writes| R[".blueprint/outputs/audit/run-id/<br/>report · gates · findings · unknowns"]
   R -.->|"findings → /specify change"| specify
-  S -->|"DDD approved"| kickoff["/kickoff"]
+  S -->|"DESIGN approved"| kickoff["/kickoff"]
   R -->|"required gates PASS"| kickoff
   kickoff -->|writes| K["docs/kickoff/ plan · baseline · review · approval<br/>docs/07-kickoff.md · docs/init-kickoff.md"]
   K -->|"docs/ and .blueprint/outputs/ move to the app repo"| init["init-kickoff"]
@@ -58,10 +58,21 @@ project root; they are not inputs of later steps. Finished audit reports go to
 | Skill | Command | Purpose |
 |---|---|---|
 | explore | `/explore` | Brainstorm and scope the idea → `docs/00-exploration.md` |
-| specify | `/specify` | Build BRD/TRD/SAD/SDD/DDD documents one by one, with approval gates |
+| specify | `/specify` | Build the requirements and design documents stage by stage, with approval gates; the profile picks the stages (see below) |
 | audit | `/audit` | Check documentation completeness, traceability and EARS compliance |
 | kickoff | `/kickoff` | Write the launch plan `docs/07-kickoff.md` (deployment order, change roadmap starting with a walking skeleton, parallelism analysis — execution waves, critical path and estimated time saving, human checkpoints, audit conditions) and copy an agent-neutral init instruction into `docs/` |
 | materialize | `/materialize` | In the app repository after init, one run = one decision: create the next OpenSpec change whose dependencies are archived (proposal, spec deltas preserving requirement meaning, design, tasks), wait for the current changes, or report the plan complete. Refines dependencies from the actual code and specs, checks them against the approved waves and analyses parallelism for 1/2/4 workers → `docs/materialize/roadmap.json`, `docs/08-materialize.md` |
+
+### Specification profiles
+
+`/specify` fixes a profile in `docs/specification/policy.json` when the store is created. The profile cannot be changed without invalidating existing reviews and approvals.
+
+| Profile | Stages | Documents | When |
+|---|---|---|---|
+| compact (default) | REQ → DESIGN | `01-requirements.md`, `03-design.md` | One or a few tightly coupled deployables; components and modules are designed together |
+| extended | REQ → ARCH → DESIGN | adds `02-architecture.md` | Several services or deployables, separate teams or external systems whose boundaries must be approved before module design |
+
+The requirements document contains both the business goals and the normalized FR/NFR. The design document fixes the contracts, data and state machines that must be agreed before parallel work. The specification contains no implementation tasks: `/kickoff` builds slices from design modules and contracts, and `/materialize` writes each change's design and tasks from the actual code. Version 3.0.0 replaced the five-stage BRD/TRD/SAD/SDD/DDD chain. Specify and kickoff do not continue stores or plans in that format, while materialize still runs plans that were already released. `/specify migrate` moves a five-stage store into a new store of the chosen profile. It keeps entity IDs and meaning, drops DDD tasks (kickoff re-derives them) and re-reviews and re-approves each stage.
 
 The init instruction is a template from [skills/kickoff/templates/](plugins/blueprint/skills/kickoff/templates/) and travels with `docs/` into the new repository, so any agent can run it:
 

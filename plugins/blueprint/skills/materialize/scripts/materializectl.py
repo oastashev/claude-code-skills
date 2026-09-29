@@ -150,7 +150,8 @@ def check(root, roadmap_path, limits=(1, 2, 4)):
         if not ok:
             errors.append(message)
 
-    need(roadmap['schema'] == 1 and plan['schema'] == 1, 'Unsupported schema')
+    # Plan schema 2 swapped DDD task references for design modules; materialize reads neither, so a released v1 plan still runs.
+    need(roadmap['schema'] == 1 and plan['schema'] in (1, 2), 'Unsupported schema')
     need(roadmap['plan_hash'] == identity['plan_hash'], 'STALE plan binding')
     need(adapter.get('plan_hash') == identity['plan_hash'], 'Adapter bound to another plan')
     need(roadmap['adapter_hash'] == digest(adapter_file), 'STALE adapter binding')

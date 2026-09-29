@@ -19,13 +19,18 @@ import re
 import sys
 import uuid
 
-STAGES = ('BRD', 'TRD', 'SAD', 'SDD', 'DDD')
-# Index prefixes order documents after 00-exploration.md: 01-BRD.md ... 05-DDD.md.
-DOCUMENT_FILES = {stage: '%02d-%s.md' % (index, stage) for index, stage in enumerate(STAGES, 1)}
+STAGES = ('REQ', 'ARCH', 'DESIGN')
+# A profile is the stage sequence of one store, fixed in policy.json. ARCH separates
+# components from modules for multi-service systems; compact designs both in DESIGN.
+PROFILES = {'compact': ('REQ', 'DESIGN'), 'extended': STAGES}
+# Index prefixes order documents after 00-exploration.md; a compact store has no 02.
+DOCUMENT_FILES = {'REQ': '01-requirements.md', 'ARCH': '02-architecture.md', 'DESIGN': '03-design.md'}
+# From its stage on, every due obligation needs a structural trace path from this kind.
+TRACE_KINDS = {'ARCH': 'component', 'DESIGN': 'module'}
 CRITERIA = ('structure', 'baseline', 'atomicity', 'completeness', 'consistency',
             'verifiability', 'feasibility', 'contracts', 'traceability', 'external_assumptions')
 KINDS = ('source', 'user_decision', 'obligation', 'term', 'contract', 'decision',
-         'behavior', 'scenario', 'component', 'module', 'task', 'question', 'assumption', 'evidence')
+         'behavior', 'scenario', 'component', 'module', 'question', 'assumption', 'evidence')
 RELATIONS = ('derives', 'refines', 'implements', 'verifies', 'depends_on', 'supersedes', 'conflicts')
 ID = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,79}\Z')
 # Stage-review re-reads this share (percent, bounded) of inherited current-stage edges chosen by the script.
@@ -136,12 +141,17 @@ def read_revision(root, revision=None, check_exports=True):
 
 def policy(root):
     value = load(root / 'policy.json')
-    need(value.get('version') == 1 and set(value.get('stages', {})) == set(STAGES), 'Invalid policy stages')
+    need(value.get('version') == 2 and value.get('profile') in PROFILES, 'Invalid policy version or profile')
+    need(set(value.get('stages', {})) == set(PROFILES[value['profile']]), 'Policy stages must match the profile')
     for stage, rule in value['stages'].items():
         need(set(rule) == {'formal_required', 'runtime_required', 'na_allowed'}, 'Invalid stage policy: ' + stage)
         need(type(rule['formal_required']) is bool and type(rule['runtime_required']) is bool, 'Invalid gate policy')
         need(isinstance(rule['na_allowed'], list) and set(rule['na_allowed']) <= set(CRITERIA), 'Invalid NA policy')
     return value
+
+
+def profile_stages(root):
+    return PROFILES[policy(root)['profile']]
 
 
 def source_check(root, entity):
@@ -163,7 +173,7 @@ def import_source(root, path, key):
         with target.open('xb') as stream:
             stream.write(data)
     need(target.read_bytes() == data, 'Existing source snapshot has changed')
-    return {'id': key, 'kind': 'source', 'stage': 'BRD', 'status': 'active',
+    return {'id': key, 'kind': 'source', 'stage': STAGES[0], 'status': 'active',
             'statement': 'Imported source: ' + path.name, 'basis': [],
             'data': {'sha256': sha, 'original': str(path.resolve())}}
 
@@ -342,16 +352,18 @@ def decision_check(entity):
 
 def validate(root, snapshot):
     need(set(snapshot) == {'schema', 'stage', 'entities', 'edges', 'documents'}, 'Invalid snapshot fields')
-    need(snapshot['schema'] == 1 and snapshot['stage'] in STAGES, 'Invalid schema or stage')
+    stages = profile_stages(root)
+    need(snapshot['schema'] == 2 and snapshot['stage'] in stages, 'Invalid schema or stage outside the policy profile')
     entities, edges, documents = snapshot['entities'], snapshot['edges'], snapshot['documents']
     need(isinstance(entities, dict) and isinstance(edges, dict) and isinstance(documents, dict), 'Registries must be objects')
     model_results = []
+    # Global order is valid for comparisons: every profile is an ordered subsequence of STAGES.
     active_stage = STAGES.index(snapshot['stage'])
     for key, entity in entities.items():
         token(key)
         need(entity.get('id') == key and entity.get('kind') in KINDS, 'Invalid entity: ' + key)
         need(isinstance(entity.get('statement'), str) and entity['statement'].strip(), 'Missing statement: ' + key)
-        need(entity.get('stage') in STAGES and isinstance(entity.get('data'), dict), 'Invalid entity stage/data: ' + key)
+        need(entity.get('stage') in stages and isinstance(entity.get('data'), dict), 'Invalid entity stage/data: ' + key)
         need(entity.get('status') in ('active', 'superseded'), 'Invalid entity status: ' + key)
         need(isinstance(entity.get('basis'), list) and all(x in entities and x != key for x in entity['basis']), 'Invalid basis: ' + key)
         if entity['kind'] == 'source':
@@ -388,9 +400,9 @@ def validate(root, snapshot):
         token(key)
         need(edge.get('id') == key and edge.get('type') in RELATIONS, 'Invalid edge: ' + key)
         need(edge.get('from') in entities and edge.get('to') in entities and edge['from'] != edge['to'], 'Dangling edge: ' + key)
-        need(edge.get('due_stage') in STAGES and isinstance(edge.get('rationale'), str) and edge['rationale'].strip(), 'Edge needs deadline and rationale: ' + key)
-    required_docs = STAGES[:active_stage + 1]
-    need(set(documents) == set(required_docs), 'Documents must cover exactly BRD through current stage')
+        need(edge.get('due_stage') in stages and isinstance(edge.get('rationale'), str) and edge['rationale'].strip(), 'Edge needs deadline and rationale: ' + key)
+    required_docs = stages[:stages.index(snapshot['stage']) + 1]
+    need(set(documents) == set(required_docs), 'Documents must cover exactly the profile stages through the current one: ' + ', '.join(required_docs))
     for stage, document in documents.items():
         need(isinstance(document.get('title'), str) and document['title'].strip(), 'Missing document title')
         need(isinstance(document.get('sections'), list) and document['sections'], 'Document needs sections: ' + stage)
@@ -405,9 +417,10 @@ def validate(root, snapshot):
     due = {k for k, e in entities.items() if e['status'] == 'active' and STAGES.index(e['stage']) <= active_stage}
     kinds = {entities[k]['kind'] for k in due}
     need({'source', 'obligation', 'scenario'} <= kinds, 'A candidate needs a source, obligation and scenario')
-    for threshold, kind in (('SAD', 'component'), ('SDD', 'module'), ('DDD', 'task')):
-        if active_stage >= STAGES.index(threshold):
-            need(kind in kinds, 'Stage needs at least one ' + kind)
+    # Compact has no ARCH, so components stay optional there; modules are required at DESIGN in both profiles.
+    traced = [kind for threshold, kind in TRACE_KINDS.items() if threshold in stages and active_stage >= STAGES.index(threshold)]
+    for kind in traced:
+        need(kind in kinds, 'Stage needs at least one ' + kind)
     shown = {e for d in documents.values() for s in d['sections'] for e in s['entities']}
     need(all(k in shown for k in due if entities[k]['kind'] not in ('source',)), 'Active entities absent from documents: ' + ', '.join(sorted(due - shown - {k for k in due if entities[k]['kind'] == 'source'})))
     for key in due:
@@ -426,10 +439,9 @@ def validate(root, snapshot):
                 seen.add(node)
                 pending.extend(parents[node] - seen)
         return seen
-    for threshold, kind in (('SAD', 'component'), ('SDD', 'module'), ('DDD', 'task')):
-        if active_stage >= STAGES.index(threshold):
-            covered = set().union(*(ancestors(k) for k in due if entities[k]['kind'] == kind))
-            need(all(k in covered for k in due if entities[k]['kind'] == 'obligation'), 'Missing ' + kind + ' trace path for an obligation')
+    for kind in traced:
+        covered = set().union(*(ancestors(k) for k in due if entities[k]['kind'] == kind))
+        need(all(k in covered for k in due if entities[k]['kind'] == 'obligation'), 'Missing ' + kind + ' trace path for an obligation')
     return model_results
 
 
@@ -1004,6 +1016,7 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     init = sub.add_parser('init')
     init.add_argument('--exploration', type=Path, help='Required /explore result; default: 00-exploration.md next to the store')
+    init.add_argument('--profile', choices=sorted(PROFILES), default='compact', help='compact: REQ, DESIGN; extended: REQ, ARCH, DESIGN')
     src = sub.add_parser('source'); src.add_argument('--file', type=Path, required=True); src.add_argument('--id', required=True)
     begin = sub.add_parser('begin'); begin.add_argument('--stage', choices=STAGES, required=True); begin.add_argument('--contract', type=Path); begin.add_argument('--work', type=Path, required=True)
     begin.add_argument('--from', dest='source_package', type=Path, help='Unaccepted package on the same base: carry its candidate, contract, findings and reviewed edge assessments')
@@ -1024,12 +1037,14 @@ def main(argv=None):
         need(exploration.read_text(encoding='utf-8-sig').strip(), 'Exploration must not be empty')
         root.mkdir(parents=True, exist_ok=False)
         defaults = {'formal_required': False, 'runtime_required': False, 'na_allowed': ['external_assumptions']}
-        write(root / 'policy.json', {'version': 1, 'stages': {s: copy.deepcopy(defaults) for s in STAGES}})
+        write(root / 'policy.json', {'version': 2, 'profile': args.profile,
+                                     'stages': {s: copy.deepcopy(defaults) for s in PROFILES[args.profile]}})
         source = import_source(root, exploration, 'SRC-EXPLORATION')
         source['data']['role'] = 'exploration'
-        snapshot = {'schema': 1, 'stage': 'BRD', 'entities': {source['id']: source}, 'edges': {}, 'documents': {}}
+        snapshot = {'schema': 2, 'stage': STAGES[0], 'entities': {source['id']: source}, 'edges': {}, 'documents': {}}
         revision = publish(root, snapshot, {'bootstrap': True}, None)
-        print(canonical({'revision': revision, 'state': 'initialized; no content reviewed or approved'}))
+        print(canonical({'revision': revision, 'profile': args.profile, 'stages': PROFILES[args.profile],
+                         'state': 'initialized; no content reviewed or approved'}))
         return 0
     need(root.is_dir(), 'Store not initialized')
     if args.command == 'sync-docs':
@@ -1042,8 +1057,11 @@ def main(argv=None):
         return 0
     if args.command == 'begin':
         snapshot, manifest = read_revision(root)
-        previous_stage = STAGES.index(snapshot['stage'])
-        target = STAGES.index(args.stage)
+        stages = profile_stages(root)
+        need(args.stage in stages, 'Stage ' + args.stage + ' is not in the policy profile: ' + ', '.join(stages))
+        need(snapshot['stage'] in stages, 'Current stage is outside the policy profile; restore the profile the store was built with')
+        previous_stage = stages.index(snapshot['stage'])
+        target = stages.index(args.stage)
         need(target <= previous_stage + 1, 'Do not skip document stages')
         if target > previous_stage:
             need(approved(root, snapshot, snapshot['stage']), 'Previous stage needs explicit approval for this revision')
@@ -1161,7 +1179,9 @@ def main(argv=None):
                   'snapshot_hash': digest(snapshot), 'policy_hash': digest(policy(root)), 'decision': args.decision, 'created': now()})
         print(canonical({'approval': 'recorded', 'revision': manifest['revision']}))
         return 0
-    print(canonical({'revision': manifest['revision'], 'stage': snapshot['stage'], 'approved': approved(root, snapshot, snapshot['stage']),
+    stages = profile_stages(root)
+    print(canonical({'revision': manifest['revision'], 'profile': policy(root)['profile'], 'stage': snapshot['stage'],
+                     'final_stage': snapshot['stage'] == stages[-1], 'approved': approved(root, snapshot, snapshot['stage']),
                      'policy_current': manifest['policy_hash'] == digest(policy(root)),
                      'verification': manifest.get('verification'),
                      'verification_state': 'CURRENT' if manifest['policy_hash'] == digest(policy(root)) else 'STALE',

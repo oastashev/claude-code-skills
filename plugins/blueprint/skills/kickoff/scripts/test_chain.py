@@ -65,22 +65,24 @@ class ChainTests(unittest.TestCase):
         self.put(folder / 'review.json', review)
         self.call('accept', '--package', str(folder))
 
-    def build(self, external=False):
+    def build(self, external=False, profile='compact'):
         self.exploration = self.root / ('inputs' if external else 'docs') / '00-exploration.md'
         self.exploration.parent.mkdir(parents=True, exist_ok=True)
         self.exploration.write_text('# SYNTHETIC exploration\nMVP: export an empty collection as a valid file.\n'
                                     'CAP-LATER: team sharing is discussed, not promised.\n'
                                     'Approved/READY are fixture assumptions, not actual user decisions.\n', encoding='utf-8')
-        self.call('init', '--exploration', str(self.exploration))
+        self.call('init', '--exploration', str(self.exploration), '--profile', profile)
         self.contract = self.root / 'contract.json'
         self.put(self.contract, dict(mode='stage-review', goal='Export fixture', scope=['O-1'],
                                     constraints=['Preserve result'], freedom=['wording'], outputs=['O-1'],
                                     checks=list(s.CRITERIA), unknowns=[]))
-        for stage in s.STAGES:
+        # Compact designs components optionally in DESIGN; extended traces them in ARCH first.
+        kinds = {'ARCH': ['component'], 'DESIGN': ['contract', 'module']}
+        for stage in s.PROFILES[profile]:
             folder = self.root / 'packages' / stage
             self.call('begin', '--stage', stage, '--contract', str(self.contract), '--work', str(folder))
             snap = s.load(folder / 'candidate.json')
-            if stage == 'BRD':
+            if stage == 'REQ':
                 snap['entities']['O-1'] = self.entity('O-1', 'obligation', stage,
                     dict(actor='user', trigger='export', precondition='collection exists', action='export',
                          outcome='valid file', exceptions=[], limits={}, phase='MVP', modality='must'), ['SRC-EXPLORATION'])
@@ -89,16 +91,15 @@ class ChainTests(unittest.TestCase):
                         dict(given='empty collection through ' + context, when='export', then='valid file',
                              distinguishes='No output is incorrect'), ['O-1'])
                     eid = 'E-' + sid
-                    snap['edges'][eid] = dict(id=eid, type='verifies', due_stage='BRD', rationale='export outcome',
+                    snap['edges'][eid] = dict(id=eid, type='verifies', due_stage='REQ', rationale='export outcome',
                                              **{'from': sid, 'to': 'O-1'})
                 snap['entities']['D-SCOPE'] = self.entity('D-SCOPE', 'decision', stage,
                     dict(selected='Defer team sharing without commitment', exploration_refs=['CAP-LATER']), ['SRC-EXPLORATION'])
                 shown = ['O-1', 'S-1', 'S-2', 'D-SCOPE']
             else:
-                kind = {'TRD': 'contract', 'SAD': 'component', 'SDD': 'module', 'DDD': 'task'}[stage]
-                key = kind.upper() + '-1'
-                snap['entities'][key] = self.entity(key, kind, stage, {'responsibility': 'export'}, ['O-1'])
-                shown = [key]
+                shown = [kind.upper() + '-1' for kind in kinds[stage]]
+                for key, kind in zip(shown, kinds[stage]):
+                    snap['entities'][key] = self.entity(key, kind, stage, {'responsibility': 'export'}, ['O-1'])
             snap['documents'][stage] = dict(title=stage, sections=[dict(id='main', title='Fixture',
                                               prose='Synthetic, not project requirements', entities=shown)])
             self.put(folder / 'candidate.json', snap)
@@ -125,7 +126,7 @@ class ChainTests(unittest.TestCase):
             files[p.relative_to(self.root).as_posix()] = k.digest(p)
         base = 'docs/kickoff/plan-' + str(self.counter)
         self.put(self.root / (base + '/baseline.json'), {'schema': 1, 'files': files})
-        plan = dict(schema=1, id='export-mvp', revision=revision, baseline=base + '/baseline.json',
+        plan = dict(schema=2, id='export-mvp', revision=revision, baseline=base + '/baseline.json',
                     exploration=self.exploration.relative_to(self.root).as_posix(), exploration_source='SRC-EXPLORATION',
                     snapshot='docs/specification/revisions/' + revision + '/snapshot.json',
                     audit_gates=prefix + '/gates.json', audit_manifest=prefix + '/manifest.json',
@@ -138,7 +139,7 @@ class ChainTests(unittest.TestCase):
                     review=base + '/review.json', approval=base + '/approval.json')
         for cid, sid, wave, deps in [('service', 'S-1', 0, []), ('ui', 'S-2', 1, ['service'])]:
             plan['changes'].append(dict(id=cid, outcome='Valid file', rationale='Core', basis=['O-1'],
-                contracts=['CONTRACT-1'], tasks=['TASK-1'], requirements=['O-1'], scenarios=[sid], depends_on=deps,
+                contracts=['CONTRACT-1'], modules=['MODULE-1'], requirements=['O-1'], scenarios=[sid], depends_on=deps,
                 wave=wave, writes=['src/' + cid + '.py'], independence='Sequential',
                 checks=[dict(scenario=sid, method='Run export via ' + cid, expected='Valid file')]))
         plan_path = base + '/plan.json'
@@ -161,6 +162,13 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(a.verify(self.root, audit / 'manifest.json')[0], 1)
         self.assertEqual(k.check(self.root, path, True)[1], 1)
 
+    def test_extended_profile_hands_architecture_to_kickoff(self):
+        self.build(profile='extended')
+        path, plan, audit = self.audit_plan()
+        self.assertEqual(k.check(self.root, path, True)[1], 0)
+        docs = {d['path'] for d in a.read_json(audit / 'manifest.json')['documents']}
+        self.assertTrue({'docs/01-requirements.md', 'docs/02-architecture.md', 'docs/03-design.md'} <= docs)
+
     def test_external_exploration_survives_entire_handoff(self):
         self.build(external=True)
         path, _, _ = self.audit_plan()
@@ -173,7 +181,7 @@ class ChainTests(unittest.TestCase):
         old_path, _, old_audit = self.audit_plan()
         old_revision = s.current(self.store)
         folder = self.root / 'packages/fix'
-        self.call('begin', '--stage', 'DDD', '--contract', str(self.contract), '--work', str(folder))
+        self.call('begin', '--stage', 'DESIGN', '--contract', str(self.contract), '--work', str(folder))
         snap = s.load(folder / 'candidate.json')
         snap['entities']['O-1']['data']['outcome'] = 'valid file with explicit empty marker'
         for sid in ('S-1', 'S-2'):
@@ -184,19 +192,20 @@ class ChainTests(unittest.TestCase):
         self.assertNotEqual(s.current(self.store), old_revision)
         self.assertEqual(a.verify(self.root, old_audit / 'manifest.json')[0], 1)
         self.assertEqual(k.check(self.root, old_path, True)[1], 1)
-        self.call('approve', '--stage', 'DDD', '--decision', 'SYNTHETIC approval of fixed edition')
+        self.call('approve', '--stage', 'DESIGN', '--decision', 'SYNTHETIC approval of fixed edition')
         new_path, _, _ = self.audit_plan()
         self.assertEqual(k.check(self.root, new_path, True)[1], 0)
         snapshot, manifest = s.read_revision(self.store)
         self.assertEqual(snapshot['entities']['O-1']['data']['outcome'], 'valid file with explicit empty marker')
-        for stage in s.STAGES:
+        self.assertEqual(set(snapshot['documents']), {'REQ', 'DESIGN'})
+        for stage in snapshot['documents']:
             self.assertEqual(k.digest(self.root / 'docs' / s.DOCUMENT_FILES[stage]), manifest['files'][s.DOCUMENT_FILES[stage]])
 
-    def test_future_idea_can_remain_outside_obligations_and_tasks(self):
+    def test_future_idea_can_remain_outside_obligations_and_modules(self):
         self.build()
         snapshot, _ = s.read_revision(self.store)
         self.assertEqual({key for key, e in snapshot['entities'].items() if e['kind'] == 'obligation'}, {'O-1'})
-        self.assertEqual({key for key, e in snapshot['entities'].items() if e['kind'] == 'task'}, {'TASK-1'})
+        self.assertEqual({key for key, e in snapshot['entities'].items() if e['kind'] == 'module'}, {'MODULE-1'})
         self.assertIn('without commitment', snapshot['entities']['D-SCOPE']['data']['selected'])
 
 

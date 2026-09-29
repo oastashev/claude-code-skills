@@ -12,7 +12,7 @@ bind печатает {files: {path: sha256}} для proposal.md и specs/*/spec
 
 ## roadmap.json
 
-- schema: 1; plan: docs/kickoff/plan.json; plan_hash: SHA256 байтов плана.
+- schema: 1; plan: docs/kickoff/plan.json (schema 2, либо ранее выпущенный план schema 1); plan_hash: SHA256 байтов плана.
 - adapter: docs/kickoff/adapter.json; adapter_hash; adapter.plan_hash обязан совпадать с plan_hash.
 - specs: каталог текущих спецификаций OpenSpec, обычно openspec/specs.
 - reviews: каталог ревью changes, обычно docs/materialize/reviews.
@@ -62,7 +62,7 @@ Pair: {a, b, status: independent|conflict|unknown, reason, evidence}. Неупо
 | coverage | Строки coverage перенесены по scope и requires; change не проверяет будущий результат; частичная гарантия не объявлена полной |
 | dependencies | Зависимости плана сохранены и архивированы; каждое edge подтверждено evidence; derived-зависимости проверены по смыслу |
 | independence | Каждая independent-пара с активными changes подтверждена по коду, данным, ресурсам и окружению, а не только по путям |
-| preparation | design/tasks основаны на DDD и текущем коде, задачи имеют проверяемый результат |
+| preparation | design/tasks основаны на модулях и контрактах DESIGN и текущем коде, не меняют их; задачи имеют проверяемый результат |
 
 Отсутствующее или не PASS ревью активного change даёт blocked. Прежний PASS автоматически не переносится.
 

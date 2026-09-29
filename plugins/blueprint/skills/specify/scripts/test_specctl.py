@@ -27,7 +27,7 @@ class Transactions(unittest.TestCase):
         self.source = json.loads(self.call('source', '--id', 'SRC-1', '--file', str(text)))
         self.contract = self.home / 'contract.json'
         self.save(self.contract, {'mode': 'stage-review', 'goal': 'Define export outcome', 'scope': ['BR-1'], 'constraints': ['Preserve empty export'],
-                                  'freedom': ['Wording'], 'outputs': ['BRD', 'BR-1', 'SC-1'], 'checks': list(s.CRITERIA), 'unknowns': []})
+                                  'freedom': ['Wording'], 'outputs': ['REQ', 'BR-1', 'SC-1'], 'checks': list(s.CRITERIA), 'unknowns': []})
 
     def save(self, path, obj):
         path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -39,13 +39,13 @@ class Transactions(unittest.TestCase):
         self.assertEqual(code, 0, output.getvalue())
         return output.getvalue()
 
-    def entity(self, key, kind, data, basis=None, stage='BRD'):
+    def entity(self, key, kind, data, basis=None, stage='REQ'):
         return {'id': key, 'kind': kind, 'stage': stage, 'status': 'active',
                 'statement': 'Export empty collection correctly: ' + key, 'basis': basis or ['SRC-1'], 'data': data}
 
     def package(self, name='package'):
         folder = self.home / name
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(folder))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(folder))
         snapshot = s.load(folder / 'candidate.json')
         snapshot['entities'].update({'SRC-1': self.source,
             'BR-1': self.entity('BR-1', 'obligation', {'actor': 'user', 'trigger': 'export', 'precondition': 'collection exists',
@@ -53,8 +53,8 @@ class Transactions(unittest.TestCase):
             'SC-1': self.entity('SC-1', 'scenario', {'given': 'empty collection', 'when': 'export', 'then': 'valid empty file',
                 'distinguishes': 'Rejects implementation that silently creates no file'}, ['BR-1'])})
         snapshot['edges'] = {'E-1': {'id': 'E-1', 'from': 'SC-1', 'to': 'BR-1', 'type': 'verifies',
-                                   'due_stage': 'BRD', 'rationale': 'Empty input still produces the promised output'}}
-        snapshot['documents'] = {'BRD': {'title': 'Export requirements', 'sections': [
+                                   'due_stage': 'REQ', 'rationale': 'Empty input still produces the promised output'}}
+        snapshot['documents'] = {'REQ': {'title': 'Export requirements', 'sections': [
             {'id': 'scope', 'title': 'Scope and acceptance', 'prose': 'Export includes an empty collection.', 'entities': ['BR-1', 'SC-1']}]}}
         self.save(folder / 'candidate.json', snapshot)
         return folder
@@ -79,8 +79,8 @@ class Transactions(unittest.TestCase):
         snapshot = s.load(folder / 'candidate.json')
         snapshot['entities']['SC-2'] = self.entity('SC-2', 'scenario', {'given': 'one item', 'when': 'export', 'then': 'file with one item',
             'distinguishes': 'Rejects implementation that drops the last item'}, ['BR-1'])
-        snapshot['edges']['E-2'] = {'id': 'E-2', 'from': 'SC-2', 'to': 'BR-1', 'type': 'verifies', 'due_stage': 'BRD', 'rationale': 'Boundary of one item'}
-        snapshot['documents']['BRD']['sections'][0]['entities'].append('SC-2')
+        snapshot['edges']['E-2'] = {'id': 'E-2', 'from': 'SC-2', 'to': 'BR-1', 'type': 'verifies', 'due_stage': 'REQ', 'rationale': 'Boundary of one item'}
+        snapshot['documents']['REQ']['sections'][0]['entities'].append('SC-2')
         self.save(folder / 'candidate.json', snapshot)
         return snapshot
 
@@ -89,12 +89,12 @@ class Transactions(unittest.TestCase):
         self.reviewed(folder)
         result = json.loads(self.call('accept', '--package', str(folder)))
         revision = self.root / 'revisions' / result['revision']
-        self.assertIn('valid file', (revision / '01-BRD.md').read_text(encoding='utf-8'))
-        self.assertEqual((self.home/'01-BRD.md').read_bytes(), (revision/'01-BRD.md').read_bytes())
+        self.assertIn('valid file', (revision / '01-requirements.md').read_text(encoding='utf-8'))
+        self.assertEqual((self.home/'01-requirements.md').read_bytes(), (revision/'01-requirements.md').read_bytes())
         self.assertIn('PASS', (revision / 'RTM.md').read_text(encoding='utf-8'))
         self.assertEqual(result['gates']['runtime'], 'UNKNOWN')
         self.assertFalse(json.loads(self.call('status'))['approved'])
-        self.call('approve', '--stage', 'BRD', '--decision', 'Test user explicitly approves BRD')
+        self.call('approve', '--stage', 'REQ', '--decision', 'Test user explicitly approves REQ')
         self.assertTrue(json.loads(self.call('status'))['approved'])
 
     def test_init_requires_exploration_and_preserves_its_bytes(self):
@@ -131,7 +131,7 @@ class Transactions(unittest.TestCase):
                 path = self.root / 'policy.json' if field == 'policy' else folder / field
                 value = s.load(path)
                 if field == 'policy':
-                    value['stages']['BRD']['runtime_required'] = True
+                    value['stages']['REQ']['runtime_required'] = True
                 elif field == 'contract.json':
                     value['goal'] = 'Changed goal'
                 else:
@@ -147,14 +147,78 @@ class Transactions(unittest.TestCase):
         with self.assertRaisesRegex(s.Invalid, 'STALE BASE'):
             self.call('accept', '--package', str(b))
 
-    def test_stage_transition_requires_approval_and_cannot_skip(self):
+    def use_profile(self, profile):
+        """Replace the default compact store with a fresh store of another profile."""
+        self.root = self.home / (profile + '-store')
+        self.call('init', '--profile', profile)
+        self.source = json.loads(self.call('source', '--id', 'SRC-1', '--file', str(self.home / 'needs.txt')))
+
+    def stage_package(self, stage, kinds):
+        """A package of the next stage with one fixture entity per kind, derived from BR-1, and its document."""
+        folder = self.home / stage
+        self.call('begin', '--stage', stage, '--contract', str(self.contract), '--work', str(folder))
+        snapshot = s.load(folder / 'candidate.json')
+        keys = [kind.upper() + '-' + stage for kind in kinds]
+        for key, kind in zip(keys, kinds):
+            snapshot['entities'][key] = self.entity(key, kind, {'responsibility': 'empty export'}, ['BR-1'], stage)
+        snapshot['documents'][stage] = {'title': stage, 'sections': [{'id': 'design', 'title': 'Design', 'prose': 'Fixture only', 'entities': keys}]}
+        self.save(folder / 'candidate.json', snapshot)
+        return folder
+
+    def walk(self, kinds):
+        """Accept and approve every stage of the store's profile."""
+        folder = self.package()
+        for stage in s.profile_stages(self.root):
+            if stage != 'REQ':
+                folder = self.stage_package(stage, kinds[stage])
+            self.reviewed(folder)
+            self.call('accept', '--package', str(folder))
+            self.call('approve', '--stage', stage, '--decision', 'Synthetic explicit approval of ' + stage)
+
+    def test_stage_transition_requires_approval_and_stays_in_profile(self):
         folder = self.package(); self.reviewed(folder)
         self.call('accept', '--package', str(folder))
-        for stage in ('TRD', 'SAD'):
+        for stage in ('ARCH', 'DESIGN'):
             with self.assertRaises(s.Invalid):
                 self.call('begin', '--stage', stage, '--contract', str(self.contract), '--work', str(self.home/stage))
-        self.call('approve', '--stage', 'BRD', '--decision', 'Explicit test approval')
-        self.call('begin', '--stage', 'TRD', '--contract', str(self.contract), '--work', str(self.home/'trd-ok'))
+        self.call('approve', '--stage', 'REQ', '--decision', 'Explicit test approval')
+        with self.assertRaisesRegex(s.Invalid, 'not in the policy profile'):
+            self.call('begin', '--stage', 'ARCH', '--contract', str(self.contract), '--work', str(self.home/'arch-compact'))
+        self.call('begin', '--stage', 'DESIGN', '--contract', str(self.contract), '--work', str(self.home/'design-ok'))
+
+    def test_extended_profile_cannot_skip_architecture(self):
+        self.use_profile('extended')
+        folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
+        self.call('approve', '--stage', 'REQ', '--decision', 'Explicit test approval')
+        with self.assertRaisesRegex(s.Invalid, 'skip'):
+            self.call('begin', '--stage', 'DESIGN', '--contract', str(self.contract), '--work', str(self.home/'design-early'))
+        self.call('begin', '--stage', 'ARCH', '--contract', str(self.contract), '--work', str(self.home/'arch-ok'))
+
+    def test_policy_stages_must_match_profile(self):
+        policy = s.load(self.root/'policy.json')
+        self.assertEqual((policy['profile'], set(policy['stages'])), ('compact', {'REQ', 'DESIGN'}))
+        policy['stages']['ARCH'] = policy['stages']['REQ']
+        self.save(self.root/'policy.json', policy)
+        with self.assertRaisesRegex(s.Invalid, 'match the profile'):
+            s.policy(self.root)
+
+    def test_compact_design_needs_module_trace_but_no_component(self):
+        folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
+        self.call('approve', '--stage', 'REQ', '--decision', 'Explicit test approval')
+        snapshot = s.load(self.stage_package('DESIGN', ['component']) / 'candidate.json')
+        with self.assertRaisesRegex(s.Invalid, 'at least one module'):
+            s.validate(self.root, snapshot)
+        section = snapshot['documents']['DESIGN']['sections'][0]
+        snapshot['entities']['MOD-1'] = self.entity('MOD-1', 'module', {'responsibility': 'export'}, ['SRC-1'], 'DESIGN')
+        section['entities'].append('MOD-1')
+        with self.assertRaisesRegex(s.Invalid, 'module trace path'):
+            s.validate(self.root, snapshot)
+        snapshot['entities']['MOD-1']['basis'] = ['BR-1']
+        del snapshot['entities']['COMPONENT-DESIGN']; section['entities'].remove('COMPONENT-DESIGN')
+        s.validate(self.root, snapshot)
+        snapshot['entities']['MOD-1']['kind'] = 'task'
+        with self.assertRaisesRegex(s.Invalid, 'Invalid entity'):
+            s.validate(self.root, snapshot)
 
     def test_missing_scenario_dangling_link_and_circular_origin_rejected(self):
         folder = self.package()
@@ -168,7 +232,7 @@ class Transactions(unittest.TestCase):
             elif defect == 'cycle':
                 snapshot['entities']['BR-1']['basis'] = ['SC-1']
             else:
-                snapshot['entities'] = {}; snapshot['edges'] = {}; snapshot['documents']['BRD']['sections'][0]['entities'] = []
+                snapshot['entities'] = {}; snapshot['edges'] = {}; snapshot['documents']['REQ']['sections'][0]['entities'] = []
             with self.subTest(defect=defect), self.assertRaises(s.Invalid):
                 s.validate(self.root, snapshot)
 
@@ -178,12 +242,12 @@ class Transactions(unittest.TestCase):
         changed['entities']['BR-1']['data']['outcome'] = 'new file format'
         report = s.impact(old, changed)
         self.assertIn('SC-1', report['affected_entities'])
-        self.assertIn('BRD', report['affected_documents'])
+        self.assertIn('REQ', report['affected_documents'])
 
     def test_gate_findings_and_future_edge(self):
         folder = self.package()
         snapshot = s.load(folder/'candidate.json')
-        snapshot['edges']['FUTURE'] = {'id': 'FUTURE', 'type': 'refines', 'from': 'SC-1', 'to': 'BR-1', 'due_stage': 'DDD', 'rationale': 'Future elaboration'}
+        snapshot['edges']['FUTURE'] = {'id': 'FUTURE', 'type': 'refines', 'from': 'SC-1', 'to': 'BR-1', 'due_stage': 'DESIGN', 'rationale': 'Future elaboration'}
         self.save(folder/'candidate.json', snapshot)
         review = self.reviewed(folder)
         review['edges']['FUTURE'] = {'status': 'NOT_APPLICABLE', 'reason': 'Future phase', 'evidence': []}
@@ -203,7 +267,7 @@ class Transactions(unittest.TestCase):
     def test_published_manual_edit_detected(self):
         folder = self.package(); self.reviewed(folder)
         result = json.loads(self.call('accept', '--package', str(folder)))
-        doc = self.root/'revisions'/result['revision']/'01-BRD.md'
+        doc = self.root/'revisions'/result['revision']/'01-requirements.md'
         doc.write_text('Changed manually', encoding='utf-8')
         with self.assertRaisesRegex(s.Invalid, 'edited'):
             self.call('status')
@@ -225,7 +289,7 @@ class Transactions(unittest.TestCase):
 
     def test_existing_top_level_document_is_not_overwritten(self):
         folder = self.package(); self.reviewed(folder)
-        path = self.home/'01-BRD.md'; path.write_text('User document', encoding='utf-8')
+        path = self.home/'01-requirements.md'; path.write_text('User document', encoding='utf-8')
         before = s.current(self.root)
         with self.assertRaisesRegex(s.Invalid, 'overwrite'):
             self.call('accept', '--package', str(folder))
@@ -234,7 +298,7 @@ class Transactions(unittest.TestCase):
 
     def test_manual_top_level_edit_blocks_status_and_sync(self):
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
-        path = self.home/'01-BRD.md'; path.write_text('Manual edit', encoding='utf-8')
+        path = self.home/'01-requirements.md'; path.write_text('Manual edit', encoding='utf-8')
         with self.assertRaisesRegex(s.Invalid, 'edited'):
             self.call('status')
         with self.assertRaisesRegex(s.Invalid, 'unrecognized edits'):
@@ -243,7 +307,7 @@ class Transactions(unittest.TestCase):
 
     def test_missing_top_level_document_is_restored(self):
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
-        path = self.home/'01-BRD.md'; original = path.read_bytes(); path.unlink()
+        path = self.home/'01-requirements.md'; original = path.read_bytes(); path.unlink()
         self.call('sync-docs')
         self.assertEqual(path.read_bytes(), original)
         s.read_revision(self.root)
@@ -259,7 +323,7 @@ class Transactions(unittest.TestCase):
         with patch.object(s, 'atomic_bytes', side_effect=interrupted):
             with self.assertRaises(OSError):
                 self.call('accept', '--package', str(folder))
-        self.assertTrue((self.home/'01-BRD.md').is_file())
+        self.assertTrue((self.home/'01-requirements.md').is_file())
         self.assertEqual(s.current(self.root), before)
         self.call('sync-docs')
         s.read_revision(self.root)
@@ -270,7 +334,7 @@ class Transactions(unittest.TestCase):
             with self.assertRaisesRegex(s.Invalid, 'lock'):
                 self.call('accept', '--package', str(folder))
         with self.assertRaises(FileExistsError):
-            self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(folder))
+            self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(folder))
 
     def test_source_tampering_and_unsafe_identifier_rejected(self):
         folder = self.package()
@@ -291,47 +355,44 @@ class Transactions(unittest.TestCase):
         folder = self.package(); self.reviewed(folder)
         self.call('accept', '--package', str(folder))
         with self.assertRaisesRegex(s.Invalid, 'stage-review'):
-            self.call('approve', '--stage', 'BRD', '--decision', 'test')
+            self.call('approve', '--stage', 'REQ', '--decision', 'test')
 
     def test_required_runtime_unknown_blocks_acceptance(self):
-        policy = s.load(self.root/'policy.json'); policy['stages']['BRD']['runtime_required'] = True
+        policy = s.load(self.root/'policy.json'); policy['stages']['REQ']['runtime_required'] = True
         self.save(self.root/'policy.json', policy)
         folder = self.package(); self.reviewed(folder)
         self.assertEqual(s.review_gate(self.root, folder)[0]['gate'], 'UNKNOWN')
 
-    def test_all_five_stages_and_backchannel_revision(self):
-        folder = self.package()
-        for stage in s.STAGES:
-            if stage != 'BRD':
-                folder = self.home/stage
-                self.call('begin', '--stage', stage, '--contract', str(self.contract), '--work', str(folder))
-                snapshot = s.load(folder/'candidate.json')
-                kind = {'TRD': 'contract', 'SAD': 'component', 'SDD': 'module', 'DDD': 'task'}[stage]
-                key = kind.upper() + '-1'
-                snapshot['entities'][key] = self.entity(key, kind, {'responsibility': 'empty export'}, ['BR-1'], stage)
-                snapshot['documents'][stage] = {'title': stage, 'sections': [{'id': 'design', 'title': 'Design', 'prose': 'Fixture only', 'entities': [key]}]}
-                self.save(folder/'candidate.json', snapshot)
-            self.reviewed(folder)
-            self.call('accept', '--package', str(folder))
-            self.call('approve', '--stage', stage, '--decision', 'Synthetic explicit approval of ' + stage)
+    def test_compact_profile_and_backchannel_revision(self):
+        self.walk({'DESIGN': ['contract', 'module']})
+        self.assertTrue(json.loads(self.call('status'))['final_stage'])
         previous = s.current(self.root)
         folder = self.home/'backchannel'
-        self.call('begin', '--stage', 'DDD', '--contract', str(self.contract), '--work', str(folder))
+        self.call('begin', '--stage', 'DESIGN', '--contract', str(self.contract), '--work', str(folder))
         snapshot = s.load(folder/'candidate.json')
         snapshot['entities']['BR-1']['data']['outcome'] = 'valid file with explicit empty marker'
         self.save(folder/'candidate.json', snapshot)
         affected = json.loads(self.call('impact', '--package', str(folder)))
-        self.assertEqual(set(affected['affected_documents']), set(s.STAGES))
+        self.assertEqual(set(affected['affected_documents']), {'REQ', 'DESIGN'})
         self.reviewed(folder)
         self.call('accept', '--package', str(folder))
         self.assertNotEqual(s.current(self.root), previous)
         self.assertFalse(json.loads(self.call('status'))['approved'])
-        self.assertTrue((self.root/'revisions'/previous/'05-DDD.md').is_file())
+        self.assertTrue((self.root/'revisions'/previous/'03-design.md').is_file())
+        self.assertFalse((self.home/'02-architecture.md').exists())
+
+    def test_extended_profile_publishes_architecture_before_design(self):
+        self.use_profile('extended')
+        self.walk({'ARCH': ['component'], 'DESIGN': ['module']})
+        status = json.loads(self.call('status'))
+        self.assertEqual((status['profile'], status['stage'], status['final_stage']), ('extended', 'DESIGN', True))
+        self.assertEqual(set(status['documents']), set(s.STAGES))
+        self.assertTrue((self.home/'02-architecture.md').is_file())
 
     def test_supersession_and_history_are_explicit(self):
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
         folder = self.home/'change'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(folder))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(folder))
         value = s.load(folder/'candidate.json')
         del value['entities']['SC-1']; self.save(folder/'candidate.json', value)
         with self.assertRaisesRegex(s.Invalid, 'delete'):
@@ -352,14 +413,14 @@ class Transactions(unittest.TestCase):
         snapshot['entities']['EV-1'] = self.entity('EV-1', 'evidence', {
             'level': 'implementation_test', 'executed': True, 'command': 'synthetic-fixture-command', 'exit_code': 0,
             'targets': {'BR-1': s.digest(snapshot['entities']['BR-1'])}}, ['LOG-1'])
-        snapshot['documents']['BRD']['sections'][0]['entities'].append('EV-1')
+        snapshot['documents']['REQ']['sections'][0]['entities'].append('EV-1')
         self.save(folder/'candidate.json', snapshot)
         review = self.reviewed(folder)
         review['runtime'] = {'status': 'PASS', 'reason': 'Synthetic external execution fixture', 'evidence': ['EV-1']}
         self.save(folder/'review.json', review)
         self.assertEqual(s.review_gate(self.root, folder)[0]['gates']['runtime'], 'PASS')
         new = self.home/'changed-evidence'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(new))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(new))
         snapshot['entities']['BR-1']['data']['outcome'] = 'new format'
         self.save(new/'candidate.json', snapshot)
         review = self.reviewed(new); review['runtime'] = {'status': 'PASS', 'reason': 'Old evidence reused', 'evidence': ['EV-1']}
@@ -373,7 +434,7 @@ class Transactions(unittest.TestCase):
                                'reason': 'Potential future export size risk', 'sources': ['BR-1']}]
         self.save(folder/'review.json', review); self.call('accept', '--package', str(folder))
         new = self.home/'next'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(new))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(new))
         review = self.reviewed(new)
         self.assertEqual(review['findings'][0]['id'], 'H-1')
         review['findings'] = []; self.save(new/'review.json', review)
@@ -385,7 +446,7 @@ class Transactions(unittest.TestCase):
         snapshot = s.load(folder / 'candidate.json')
         machine = StateMachines().spec()
         snapshot['entities']['BH-RUN'] = self.entity('BH-RUN', 'behavior', machine['data'], ['BR-1'])
-        snapshot['documents']['BRD']['sections'][0]['entities'].append('BH-RUN')
+        snapshot['documents']['REQ']['sections'][0]['entities'].append('BH-RUN')
         broken = copy.deepcopy(snapshot); del broken['entities']['BH-RUN']['data']['ignored'][0]
         self.save(folder / 'candidate.json', broken)
         output = io.StringIO()
@@ -402,7 +463,7 @@ class Transactions(unittest.TestCase):
         self.fragment()
         folder = self.package(); self.reviewed(folder); accepted = json.loads(self.call('accept', '--package', str(folder)))['revision']
         added = self.home / 'added'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(added))
         self.with_second_scenario(added)
         self.call('prepare-review', '--package', str(added))
         edges = s.load(added / 'review.json')['edges']
@@ -414,7 +475,7 @@ class Transactions(unittest.TestCase):
         self.fill(added)
         self.assertEqual(s.review_gate(self.root, added)[0]['gate'], 'PASS')
         changed = self.home / 'changed'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(changed))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(changed))
         snapshot = s.load(changed / 'candidate.json'); snapshot['entities']['BR-1']['data']['outcome'] = 'file with header'
         self.save(changed / 'candidate.json', snapshot)
         self.call('prepare-review', '--package', str(changed))
@@ -424,7 +485,7 @@ class Transactions(unittest.TestCase):
         self.fragment()
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
         added = self.home / 'added'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(added))
         self.with_second_scenario(added)
         review = self.reviewed(added)
         for forged in ('altered', 'minted', 'context'):
@@ -447,12 +508,12 @@ class Transactions(unittest.TestCase):
         self.fragment()
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
         added = self.home / 'added'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(added))
         self.with_second_scenario(added); self.reviewed(added)
         revision = json.loads(self.call('accept', '--package', str(added)))['revision']
         contract = s.load(self.contract); contract['mode'] = 'stage-review'; self.save(self.contract, contract)
         final = self.home / 'final'
-        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(final))
+        self.call('begin', '--stage', 'REQ', '--contract', str(self.contract), '--work', str(final))
         return final, revision
 
     def test_stage_review_rereads_edges_whose_context_changed(self):
@@ -493,7 +554,7 @@ class Transactions(unittest.TestCase):
                                    'sources': ['BR-1'], 'counterexample': 'Empty bytes and empty array both pass', 'closure': 'Choose one format'}]
             self.save(final / 'review.json', review)
             retry = self.home / 'retry'
-            self.call('begin', '--stage', 'BRD', '--from', str(final), '--work', str(retry))
+            self.call('begin', '--stage', 'REQ', '--from', str(final), '--work', str(retry))
             self.call('prepare-review', '--package', str(retry))
             edges = s.load(retry / 'review.json')['edges']
         self.assertEqual(edges['E-1']['inherited'], 'package:' + s.load(final / 'package.json')['id'])
@@ -553,9 +614,9 @@ class Transactions(unittest.TestCase):
         folder = self.package()
         snapshot = s.load(folder / 'candidate.json')
         before = s.edge_context(snapshot, s.incidence(snapshot), 'E-1')
-        snapshot['edges']['E-3'] = {'id': 'E-3', 'from': 'SC-1', 'to': 'BR-1', 'type': 'refines', 'due_stage': 'TRD', 'rationale': 'Later refinement'}
+        snapshot['edges']['E-3'] = {'id': 'E-3', 'from': 'SC-1', 'to': 'BR-1', 'type': 'refines', 'due_stage': 'DESIGN', 'rationale': 'Later refinement'}
         self.assertEqual(s.edge_context(snapshot, s.incidence(snapshot), 'E-1'), before)
-        snapshot['edges']['E-3']['due_stage'] = 'BRD'
+        snapshot['edges']['E-3']['due_stage'] = 'REQ'
         self.assertNotEqual(s.edge_context(snapshot, s.incidence(snapshot), 'E-1'), before)
 
     def test_begin_from_unaccepted_package_carries_work_and_review(self):
@@ -566,7 +627,7 @@ class Transactions(unittest.TestCase):
         self.save(first / 'review.json', review)
         self.assertEqual(s.review_gate(self.root, first)[0]['gate'], 'FAIL')
         fixed = self.home / 'fixed'
-        self.call('begin', '--stage', 'BRD', '--from', str(first), '--work', str(fixed))
+        self.call('begin', '--stage', 'REQ', '--from', str(first), '--work', str(fixed))
         self.assertEqual(s.load(fixed / 'contract.json'), s.load(first / 'contract.json'))
         self.with_second_scenario(fixed)
         self.assertEqual(json.loads(self.call('diff', '--package', str(fixed)))['previous']['new_entities'], ['SC-2'])
@@ -580,7 +641,7 @@ class Transactions(unittest.TestCase):
             s.review_gate(self.root, fixed)
         other = self.package('other'); self.reviewed(other); self.call('accept', '--package', str(other))
         with self.assertRaisesRegex(s.Invalid, 'STALE BASE'):
-            self.call('begin', '--stage', 'BRD', '--from', str(first), '--work', str(self.home / 'late'))
+            self.call('begin', '--stage', 'REQ', '--from', str(first), '--work', str(self.home / 'late'))
 
 
 class DecisionTables(unittest.TestCase):

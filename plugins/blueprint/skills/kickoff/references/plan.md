@@ -18,7 +18,7 @@ check печатает mechanical, semantic, readiness, approval, plan_hash, bas
 Команда parallel читает только кандидат плана и строит анализ раскладки: baseline/review/approval она не проверяет и не изменяет. Код 0 означает успешный расчёт, включая PARTIAL; 1 — противоречие заявленной независимости графу/общим writes; 2 — некорректный ввод. Перед запуском реализации обязателен check --execution. check также выводит parallelism и блокирует выбранную совместную волну без подтверждённых independent-пар.
 
 Корень:
-- schema: 1; id: стабильный ID плана; revision: ID ревизии specify.
+- schema: 2; id: стабильный ID плана; revision: ID ревизии specify. Snapshot ревизии — schema 2 на стадии DESIGN; check требует в baseline документы всех её стадий (01-requirements.md, 02-architecture.md при профиле extended, 03-design.md).
 - baseline: путь baseline.json; snapshot: путь snapshot.json; audit_gates: путь gates.json; audit_manifest: путь manifest.json того же завершённого аудита. Manifest содержит specification.store/revision и входной инвентарь. Скрипт сверяет binding, хеши входов и наличие нормативных источников. Соответствие gates/report/manifest одному scope и подлинность выводов проверяются критерием baseline.
 - exploration: фактический относительный путь 00-exploration.md (по умолчанию рядом с хранилищем); exploration_source: ID соответствующего active source (по умолчанию SRC-EXPLORATION). Оригинал и source snapshot должны совпадать по SHA256. При импорте новой редакции выбери новый ID, не переписывай старый source.
 - scope: {goal, phase, basis: [ID]} — полезный результат, фаза, основания.
@@ -42,7 +42,7 @@ Coverage row: {change, scenario, scope: local|integration, requires: [change-id]
 Change:
 - id: стабильное безопасное имя каталога, например order-create.
 - outcome, rationale: наблюдаемый результат и необходимость для MVP.
-- basis: [ID]; contracts: [ID contract]; tasks: [ID task].
+- basis: [ID]; contracts: [ID contract]; modules: [ID module] — модули DESIGN, которые срез создаёт или меняет. План schema 1 с полем tasks (ссылки на задачи DDD) не принимается: составь новую редакцию по текущей спецификации.
 - requirements: [ID obligation] — все применимые, не только принадлежащие срезу.
 - scenarios: [ID scenario].
 - depends_on: [change-id]; wave: целое >= 0.

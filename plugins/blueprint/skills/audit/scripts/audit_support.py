@@ -14,9 +14,8 @@ from pathlib import Path
 
 DEFAULT_PREFIXES = ['CAP', 'US', 'BR', 'FR', 'NFR', 'C', 'M', 'CH', 'T']
 TEXT_EXTENSIONS = {'.md', '.markdown', '.txt'}
-# Document names published by specify next to its store.
-SPECIFICATION_DOCUMENTS = {'BRD': '01-BRD.md', 'TRD': '02-TRD.md', 'SAD': '03-SAD.md',
-                           'SDD': '04-SDD.md', 'DDD': '05-DDD.md'}
+# Document names published by specify next to its store; ARCH exists only in the extended profile.
+SPECIFICATION_DOCUMENTS = {'REQ': '01-requirements.md', 'ARCH': '02-architecture.md', 'DESIGN': '03-design.md'}
 
 
 def read_json(path):

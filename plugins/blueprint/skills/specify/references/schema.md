@@ -1,19 +1,21 @@
-# Формат спецификации v1
+# Формат спецификации v2
 
 ## Хранилище
 
 ```text
 docs/00-exploration.md             # обязательный вход от /explore; не изменяется скилом
-docs/01-BRD.md ... 05-DDD.md       # актуальные документы для чтения и аудита
+docs/01-requirements.md            # REQ: актуальные документы для чтения и аудита
+docs/02-architecture.md            # ARCH: только профиль extended
+docs/03-design.md                  # DESIGN
 docs/specification/
-  policy.json
+  policy.json                     # version 2, profile, правила gates по стадиям профиля
   CURRENT                         # ID единственной опубликованной ревизии
   sources/<sha256>.txt             # неизменные снимки входов и отчётов
   revisions/<revision-id>/
     snapshot.json                 # нормативные записи и композиция документов
     review.json                   # фактические оценки именно этой ревизии
     manifest.json                 # родитель, хеши файлов, политика, контракт
-    01-BRD.md ... 05-DDD.md        # исторические снимки документов данной ревизии
+    01-requirements.md ...        # исторические снимки документов данной ревизии
     RTM.md                        # производное представление графа
   approvals/<event-id>.json        # запись явного утверждения пользователя
   DOCS-PENDING.json                # только во время незавершённой публикации
@@ -35,7 +37,7 @@ docs/specification/
 
 ## Snapshot
 
-Корневые поля строго: `schema: 1`, `stage: BRD|TRD|SAD|SDD|DDD`, `entities`, `edges`, `documents`. Последние три — объекты, индексируемые ID (documents — именем стадии).
+Корневые поля строго: `schema: 2`, `stage: REQ|ARCH|DESIGN`, `entities`, `edges`, `documents`. Последние три — объекты, индексируемые ID (documents — именем стадии). Все значения stage и due_stage принадлежат профилю policy.json: compact — REQ, DESIGN; extended — REQ, ARCH, DESIGN. Порядок стадий общий, профиль лишь исключает ARCH. Snapshot `schema: 1` (стадии BRD…DDD) не поддерживается.
 
 Пример для ознакомления: [example-candidate.json](../assets/example-candidate.json). Его источник необходимо заменить реальным SRC-EXPLORATION из начальной ревизии, а учебные требования — обязательствами exploration. Пример не проходит проверку до этой замены и смыслового ревью. Не удаляй сущности, уже присутствующие в кандидате от begin.
 
@@ -46,7 +48,7 @@ docs/specification/
 | Поле | Значение |
 |---|---|
 | id | Совпадает с ключом в entities |
-| kind | source, user_decision, obligation, term, contract, decision, behavior, scenario, component, module, task, question, assumption, evidence |
+| kind | source, user_decision, obligation, term, contract, decision, behavior, scenario, component, module, question, assumption, evidence |
 | stage | Стадия, к которой сущность должна быть раскрыта |
 | status | active или superseded; candidate/accepted относятся к пакету/ревизии |
 | statement | Человекочитаемая нормативная запись или описание типа сущности |
@@ -57,20 +59,20 @@ statement и data описывают один смысл; при несовпа�
 
 Источники `source` создаются командой source: data.sha256 указывает на снимок в sources; original хранит происхождение. Команда не добавляет сущность в snapshot — вставь выданный JSON с реальной классификацией statement. После принятия источник и user_decision нельзя переписать или удалить: добавь новую запись, явно объясни замещение.
 
-Для `obligation` обязательны data.actor, trigger, precondition, action, outcome, exceptions, limits, phase, modality. actor/action/outcome/phase/modality — непустые строки; exceptions обычно массив, limits — объект с единицами и границами. Условия «нет» выражай явно, не подменяй неизвестное пустой строкой. Сценарий требуется уже для BRD на уровне наблюдаемого бизнес-результата.
+Для `obligation` обязательны data.actor, trigger, precondition, action, outcome, exceptions, limits, phase, modality. actor/action/outcome/phase/modality — непустые строки; exceptions обычно массив, limits — объект с единицами и границами. Условия «нет» выражай явно, не подменяй неизвестное пустой строкой. Сценарий требуется уже на REQ на уровне наблюдаемого результата.
 
 Для `scenario`: given, when, then, distinguishes. Последнее называет правдоподобную неправильную реализацию, которую сценарий отличает от корректной. Не добавляй executed=true сценарию: исполнение — отдельное evidence.
 
 ### Перенос границ exploration
 
-`stage` — глубина раскрытия документации, `data.phase` — фаза поставки. Они не взаимозаменяемы: phase=after-MVP не отключает проверки active obligation на стадии DDD.
+`stage` — глубина раскрытия документации, `data.phase` — фаза поставки. Они не взаимозаменяемы: phase=after-MVP не отключает проверки active obligation на стадии DESIGN.
 
 - MVP: подтверждённые гарантии преобразуй в obligations с фактической phase, основаниями и ссылками на G/C/CAP/US/DEC. Ссылки внутри exploration сохраняй в data.exploration_refs вместе с basis на source/решение; не создавай фиктивный ID сущности вместо ссылки на раздел.
-- После MVP: обсуждённая возможность без обещания реализации остаётся в source; при необходимости отрази принятое решение об откладывании как decision/user_decision со scope и exploration_refs. Не создавай active obligation, component/module/task только ради будущей идеи. Предложение не становится user_decision без ответа пользователя.
-- Non-goal: сохрани решение об исключении со scope и основаниями. Обязательный запрет для MVP может быть obligation; исключённая функция не получает задачи реализации.
+- После MVP: обсуждённая возможность без обещания реализации остаётся в source; при необходимости отрази принятое решение об откладывании как decision/user_decision со scope и exploration_refs. Не создавай active obligation, component/module только ради будущей идеи. Предложение не становится user_decision без ответа пользователя.
+- Non-goal: сохрани решение об исключении со scope и основаниями. Обязательный запрет для MVP может быть obligation; исключённая функция не получает компонента или модуля реализации.
 - Явно обещанный будущий релиз: отдельное обязательство с phase и решением. Его добавление в проектируемый комплект расширяет scope документации и требует раскрытия; не объявляй его простой идеей «на потом». Если сейчас проектируется только MVP, сохрани будущий scope отдельно в источнике/решении и не включай в активный нормативный набор без согласованного расширения.
 
-При stage-review сопоставь каждое включение/откладывание/исключение с моделью и проверь отсутствие новых обещаний. Не ослабляй структурные проверки и не меняй phase ради обхода недостающих задач.
+При stage-review сопоставь каждое включение/откладывание/исключение с моделью и проверь отсутствие новых обещаний. Не ослабляй структурные проверки и не меняй phase ради обхода недостающих компонентов или модулей.
 
 Для остальных сущностей минимальные смысловые поля задаёт протокол (не все они проверяются скриптом):
 
@@ -81,7 +83,6 @@ statement и data описывают один смысл; при несовпа�
 | contract | participants, input, output, errors, defaults, invariants, ownership, atomicity |
 | decision | problem, selected, alternatives, rationale, consequences, limitations |
 | component/module | responsibility, provided_contracts, required_contracts, failure_behavior |
-| task | phase, prerequisites, outputs, acceptance |
 | assumption | claim, verification_method, owner, due, impact_if_false |
 | question | question, options, blocking (bool), affected_scope; blocking=true на текущей стадии блокирует check |
 
@@ -165,7 +166,7 @@ PASS означает детерминизм и полноту над объяв
 `id`, `type`, `from`, `to`, `due_stage`, `rationale`. Оба конца должны существовать; неизвестные ID не заменяются заглушками. Направления:
 
 - derives/refines: производная сущность → её основание;
-- implements: компонент/модуль/задача → реализуемое обязательство или контракт;
+- implements: компонент/модуль → реализуемое обязательство или контракт;
 - verifies: сценарий → обязательство;
 - depends_on: зависимая сущность → необходимое основание;
 - supersedes: новое решение → заменяемое положение;
@@ -173,13 +174,13 @@ PASS означает детерминизм и полноту над объяв
 
 Синтаксическую целостность проверяет скрипт; допустимость типов концов и фактический смысл — ревьюер. У каждой действующей obligation текущей стадии должна быть verifies-связь от действующего scenario, доступного на этой стадии.
 
-Начиная с SAD для каждого такого обязательства нужен структурный путь от component, с SDD — ещё от module, с DDD — от task. Скрипт проходит basis и связи implements/refines/derives/depends_on, относящиеся к текущей стадии. Это проверка наличия пути, не доказательство реализации гарантии.
+Начиная с ARCH (только extended) для каждого такого обязательства нужен структурный путь от component, с DESIGN — от module в обоих профилях. В compact компоненты допустимы на DESIGN, но путь от них не требуется. Задач (task) в модели нет: срезы и задачи реализации строят kickoff и materialize из модулей, контрактов и обязательств. Скрипт проходит basis и связи implements/refines/derives/depends_on, относящиеся к текущей стадии. Это проверка наличия пути, не доказательство реализации гарантии.
 
 У каждого ребра есть отдельная оценка в review.edges. RTM показывает её, не выводит semantic-confirmed из наличия ID. Будущее due_stage не даёт права игнорировать уже действующее противоречие в самих обязательствах.
 
 ### Documents
 
-documents содержит ровно BRD…текущая стадия. Документ: `title`, непустой `sections`. Раздел: `id`, `title`, `prose`, `entities: [ID]`. ID раздела уникален внутри документа. prose — пояснения; новые нормативные факты выноси в сущности. Все active-сущности, срок которых наступил, кроме source должны быть представлены хотя бы в одном документе.
+documents содержит ровно стадии профиля от REQ до текущей. Документ: `title`, непустой `sections`. Раздел: `id`, `title`, `prose`, `entities: [ID]`. ID раздела уникален внутри документа. prose — пояснения; новые нормативные факты выноси в сущности. Все active-сущности, срок которых наступил, кроме source должны быть представлены хотя бы в одном документе.
 
 Renderer показывает statement и структурированные поля сущностей в таблицах. Это простой проверяемый Markdown, не готовая полиграфическая вёрстка. Перекомпоновку выполняй в documents; редактирование производных .md не поддерживается как источник истины.
 

@@ -24,8 +24,8 @@
 ```json
 {
   "documents": [
-    {"path": "01-brd.md", "role": "BRD", "namespace": "product", "authority": "current"},
-    {"path": "02-trd.md", "role": "TRD", "namespace": "product", "authority": "current"}
+    {"path": "docs/00-exploration.md", "role": "exploration", "namespace": "product", "authority": "current"},
+    {"path": "legacy/api-notes.md", "role": "design", "namespace": "product", "authority": "historical"}
   ],
   "prefixes": ["CAP", "US", "BR", "FR", "NFR", "C", "M", "CH", "T"]
 }
@@ -78,7 +78,7 @@ python SKILL_DIR/scripts/audit_support.py compare --previous OLD/manifest.json -
     "scope": "новый процесс при повторной попытке",
     "requirement_ids": ["BR-12", "FR-129"],
     "evidence": [{
-      "file": "02-trd.md",
+      "file": "docs/01-requirements.md",
       "sha256": "actual-input-sha256",
       "lines": [291, 291],
       "section": "Повторы",
