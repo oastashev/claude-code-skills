@@ -3,5 +3,5 @@ node_modules/
 tmp
 *.log
 .DS_Store
-app-pipeline.zip
+blueprint.zip
 

@@ -3,12 +3,12 @@
 ## Назначение и карта
 
 Это marketplace плагинов Claude Code, а не приложение, создаваемое этими
-плагинами. Основной плагин `app-pipeline` проводит пользователя через
+плагинами. Основной плагин `blueprint` проводит пользователя через
 `explore → specify → audit → kickoff → materialize`.
 
 - `.claude-plugin/marketplace.json` — каталог плагинов.
-- `plugins/app-pipeline/.claude-plugin/plugin.json` — манифест плагина.
-- `plugins/app-pipeline/skills/<name>/SKILL.md` — точка входа скила.
+- `plugins/blueprint/.claude-plugin/plugin.json` — манифест плагина.
+- `plugins/blueprint/skills/<name>/SKILL.md` — точка входа скила.
 - `references/` — подробные правила; `assets/` — контракты и примеры.
 - `scripts/` — Python CLI и тесты рядом с ними.
 - `kickoff/templates/` — инструкции, переносимые в целевой проект.
@@ -58,10 +58,10 @@
 Команды выполняются из корня репозитория; требуется Python 3.10+.
 
 ```sh
-python -m unittest discover -s plugins/app-pipeline/skills/specify/scripts -p "test_*.py"
-python -m unittest discover -s plugins/app-pipeline/skills/audit/scripts -p "test_*.py"
-python -m unittest discover -s plugins/app-pipeline/skills/kickoff/scripts -p "test_*.py"
-python -m unittest discover -s plugins/app-pipeline/skills/materialize/scripts -p "test_*.py"
+python -m unittest discover -s plugins/blueprint/skills/specify/scripts -p "test_*.py"
+python -m unittest discover -s plugins/blueprint/skills/audit/scripts -p "test_*.py"
+python -m unittest discover -s plugins/blueprint/skills/kickoff/scripts -p "test_*.py"
+python -m unittest discover -s plugins/blueprint/skills/materialize/scripts -p "test_*.py"
 git diff --check
 ```
 

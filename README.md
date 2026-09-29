@@ -15,15 +15,21 @@ Add it in Claude Code:
 Then install a plugin from it:
 
 ```
-/plugin install app-pipeline@claude-code-skills
+/plugin install blueprint@claude-code-skills
 ```
+
+Before 2.0.0 the plugin was called `app-pipeline`. If you have it installed, run
+`/plugin uninstall app-pipeline@claude-code-skills` and install `blueprint`
+instead. Commands and the `docs/` / `openspec/` layout are unchanged.
 
 ## Plugins
 
-### app-pipeline
+### blueprint
 
 Five-step pipeline for going from a high-level app idea to an audited
-implementation plan and an OpenSpec repository with changes ready to implement:
+implementation plan and an OpenSpec repository with changes ready to
+implement. It stops before implementation: the result is the blueprint, not
+the app.
 
 ```mermaid
 flowchart TB
@@ -57,7 +63,7 @@ next one automatically.
 | kickoff | `/kickoff` | Write the launch plan `docs/07-kickoff.md` (deployment order, change roadmap starting with a walking skeleton, parallelism analysis — execution waves, critical path and estimated time saving, human checkpoints, audit conditions) and copy an agent-neutral init instruction into `docs/` |
 | materialize | `/materialize` | In the app repository after init, one run = one decision: create the next OpenSpec change whose dependencies are archived (proposal, spec deltas preserving requirement meaning, design, tasks), wait for the current changes, or report the plan complete. Refines dependencies from the actual code and specs, checks them against the approved waves and analyses parallelism for 1/2/4 workers → `docs/materialize/roadmap.json`, `docs/08-materialize.md` |
 
-The init instruction is a template from [skills/kickoff/templates/](plugins/app-pipeline/skills/kickoff/templates/) and travels with `docs/` into the new repository, so any agent can run it:
+The init instruction is a template from [skills/kickoff/templates/](plugins/blueprint/skills/kickoff/templates/) and travels with `docs/` into the new repository, so any agent can run it:
 
 | File | How to run | Purpose |
 |---|---|---|
@@ -65,14 +71,14 @@ The init instruction is a template from [skills/kickoff/templates/](plugins/app-
 
 Init only prepares the repository: it creates no OpenSpec changes, design/tasks or execution state. `/materialize` then turns the approved plan into OpenSpec changes, one per run. A change counts as done once it is archived; each run creates the next change whose dependencies are all archived, otherwise it reports which changes it is waiting for, or that every change of the plan is archived. Applying changes is a separate, self-contained process: its `max_workers` and execution mode do not gate materialize. Materialize asks no questions: the plan stays authoritative for slices, dependencies, waves and execution mode, dependencies found in the repository that agree with the approved order are recorded as refinements, and defects or contradictions block the run until `/kickoff revise` (or specify and a new audit). Materialize does not implement or archive changes.
 
-See [plugins/app-pipeline/skills/](plugins/app-pipeline/skills/) for each skill's full instructions.
+See [plugins/blueprint/skills/](plugins/blueprint/skills/) for each skill's full instructions.
 
 ## Repository layout
 
 ```
 .claude-plugin/marketplace.json   # marketplace manifest (this repo)
 plugins/
-  app-pipeline/
+  blueprint/
     .claude-plugin/plugin.json    # plugin manifest
     skills/                       # auto-discovered Claude Code skills
 ```

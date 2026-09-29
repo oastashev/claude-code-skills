@@ -1,8 +1,8 @@
 {
-  "name": "app-pipeline",
-  "displayName": "App Dev Pipeline",
+  "name": "blueprint",
+  "displayName": "Blueprint",
   "description": "Five-step pipeline (explore → specify → audit → kickoff → materialize) for turning a high-level app idea into audited requirements/design docs, a launch plan with an agent-neutral init-kickoff instruction that sets up an OpenSpec-ready repository, and OpenSpec changes with a dependency-checked implementation order and parallelism analysis.",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "author": {
     "name": "Oleg Astashev",
     "email": "oastashev@gmail.com"
