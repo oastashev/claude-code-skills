@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mechanical scaffold checks and next-change decision.
+"""Mechanical materialize checks and next-change decision.
 
 Does not certify semantic equivalence, independence or review judgments."""
 import argparse
@@ -367,7 +367,7 @@ def check(root, roadmap_path, limits=(1, 2, 4)):
     elif not remaining:
         decision = dict(action='complete', reason='Every plan change is archived')
     else:
-        # Creation depends only on archived dependencies; execution capacity is not scaffold's concern.
+        # Creation depends only on archived dependencies; execution capacity is not materialize's concern.
         pending = {cid: sorted(remaining_deps[cid]) for cid in remaining if states[cid] == 'planned'}
         candidates = [cid for cid in pending if not pending[cid]]
         if candidates:

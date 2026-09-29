@@ -1,7 +1,7 @@
 {
   "name": "app-pipeline",
   "displayName": "App Dev Pipeline",
-  "description": "Five-step pipeline (explore → assemble → audit → kickoff → scaffold) for turning a high-level app idea into audited requirements/design docs, a launch plan with an agent-neutral init-kickoff instruction that sets up an OpenSpec-ready repository, and OpenSpec changes with a dependency-checked implementation order and parallelism analysis.",
+  "description": "Five-step pipeline (explore → assemble → audit → kickoff → materialize) for turning a high-level app idea into audited requirements/design docs, a launch plan with an agent-neutral init-kickoff instruction that sets up an OpenSpec-ready repository, and OpenSpec changes with a dependency-checked implementation order and parallelism analysis.",
   "version": "1.1.0",
   "author": {
     "name": "Oleg Astashev",

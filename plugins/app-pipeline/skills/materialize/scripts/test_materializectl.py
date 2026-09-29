@@ -7,12 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import scaffoldctl
+import materializectl
 
 SPEC = '# {cap}\n\n## Purpose\nFixture.\n\n## Requirements\n\n### Requirement: {name}\nThe system SHALL {name}.\n'
 
 
-class ScaffoldTests(unittest.TestCase):
+class MaterializeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -45,10 +45,10 @@ class ScaffoldTests(unittest.TestCase):
 
     def build(self, states, review=True):
         self.put('docs/kickoff/plan.json', self.plan)
-        plan_hash = scaffoldctl.digest(self.root / 'docs/kickoff/plan.json')
+        plan_hash = materializectl.digest(self.root / 'docs/kickoff/plan.json')
         self.put('docs/kickoff/adapter.json', {'plan_hash': plan_hash, 'cli': 'synthetic'})
         shutil.rmtree(self.root / 'openspec/changes', ignore_errors=True)
-        shutil.rmtree(self.root / 'docs/scaffold', ignore_errors=True)
+        shutil.rmtree(self.root / 'docs/materialize', ignore_errors=True)
         changes = {}
         for c in self.plan['changes']:
             cid, base, state = c['id'], 'openspec/changes/' + c['id'], states.get(c['id'], 'planned')
@@ -66,26 +66,26 @@ class ScaffoldTests(unittest.TestCase):
                     self.put(base + '/specs/' + cap + '/spec.md', text)
                 changes[cid]['files'] = json.loads(self.cli('bind', '--change', base)[1])['files']
                 if review:
-                    self.put('docs/scaffold/reviews/' + cid + '.json', dict(
+                    self.put('docs/materialize/reviews/' + cid + '.json', dict(
                         schema=1, change=cid, plan_hash=plan_hash, files=changes[cid]['files'], criteria={
                             k: dict(status='PASS', reason='Synthetic fixture, not a semantic review', evidence=['fixture'])
-                            for k in scaffoldctl.CRITERIA}))
+                            for k in materializectl.CRITERIA}))
         active = {cid for cid, s in states.items() if s == 'active'}
         self.roadmap = {'schema': 1, 'plan': 'docs/kickoff/plan.json', 'plan_hash': plan_hash,
                         'adapter': 'docs/kickoff/adapter.json',
-                        'adapter_hash': scaffoldctl.digest(self.root / 'docs/kickoff/adapter.json'),
-                        'specs': 'openspec/specs', 'reviews': 'docs/scaffold/reviews', 'changes': changes,
+                        'adapter_hash': materializectl.digest(self.root / 'docs/kickoff/adapter.json'),
+                        'specs': 'openspec/specs', 'reviews': 'docs/materialize/reviews', 'changes': changes,
                         'edges': self.edges, 'pairs': [p for p in self.pairs if {p['a'], p['b']} <= active]}
-        self.put('docs/scaffold/roadmap.json', self.roadmap)
+        self.put('docs/materialize/roadmap.json', self.roadmap)
 
     def cli(self, *args):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            code = scaffoldctl.main([args[0], '--root', str(self.root), *args[1:]])
+            code = materializectl.main([args[0], '--root', str(self.root), *args[1:]])
         return code, output.getvalue()
 
     def check(self):
-        return scaffoldctl.check(self.root, 'docs/scaffold/roadmap.json')
+        return materializectl.check(self.root, 'docs/materialize/roadmap.json')
 
     def next(self, states):
         self.build(states)
@@ -104,7 +104,7 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(self.next(done)['action'], 'complete')
 
     def test_creation_ignores_max_workers_and_later_waves(self):
-        # Sequential plan, max_workers=1: execution capacity does not gate scaffold.
+        # Sequential plan, max_workers=1: execution capacity does not gate materialize.
         self.pairs = [{'a': 'export', 'b': 'search', 'status': 'independent', 'reason': 'Separate modules and specs',
                        'evidence': ['src/export.py', 'src/search.py']}]
         self.assertEqual(self.next({'foundation': 'archived', 'export': 'active'})['change'], 'search')
@@ -190,16 +190,16 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(result['longest_dependency_chain']['unit'], 'change_count')
 
     def test_parse_delta_rename_and_malformed_sections(self):
-        entries, errors = scaffoldctl.parse_delta(
+        entries, errors = materializectl.parse_delta(
             '## RENAMED Requirements\n- FROM: `### Requirement: Login`\n- TO: `### Requirement: Sign in`\n')
         self.assertEqual((entries, errors), ([{'op': 'RENAMED', 'name': 'Login', 'to': 'Sign in'}], []))
-        self.assertTrue(scaffoldctl.parse_delta('### Requirement: Loose\n')[1])
-        self.assertTrue(scaffoldctl.parse_delta('## RENAMED Requirements\n- FROM: `### Requirement: A`\n')[1])
-        self.assertEqual(scaffoldctl.parse_delta('# Nothing\n')[1], ['No recognized delta operations'])
+        self.assertTrue(materializectl.parse_delta('### Requirement: Loose\n')[1])
+        self.assertTrue(materializectl.parse_delta('## RENAMED Requirements\n- FROM: `### Requirement: A`\n')[1])
+        self.assertEqual(materializectl.parse_delta('# Nothing\n')[1], ['No recognized delta operations'])
 
     def test_cli_reports_without_writing(self):
         before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
-        code, output = self.cli('check', '--roadmap', 'docs/scaffold/roadmap.json', '--workers', '1', '3')
+        code, output = self.cli('check', '--roadmap', 'docs/materialize/roadmap.json', '--workers', '1', '3')
         self.assertEqual(code, 0)
         self.assertEqual([s['workers'] for s in json.loads(output)['scenarios']], [1, 3])
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})

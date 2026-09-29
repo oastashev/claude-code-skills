@@ -1,11 +1,11 @@
 # Контракт roadmap
 
-Python 3.10+, стандартная библиотека. ROOT — корень репозитория приложения, SKILL — фактический каталог scaffold; аргументы экранируй для текущего shell.
+Python 3.10+, стандартная библиотека. ROOT — корень репозитория приложения, SKILL — фактический каталог materialize; аргументы экранируй для текущего shell.
 
 ```text
-python SKILL/scripts/scaffoldctl.py bind --root ROOT --change openspec/changes/<id>
-python SKILL/scripts/scaffoldctl.py check --root ROOT --roadmap docs/scaffold/roadmap.json
-python SKILL/scripts/scaffoldctl.py check --root ROOT --roadmap docs/scaffold/roadmap.json --workers 1 2 4
+python SKILL/scripts/materializectl.py bind --root ROOT --change openspec/changes/<id>
+python SKILL/scripts/materializectl.py check --root ROOT --roadmap docs/materialize/roadmap.json
+python SKILL/scripts/materializectl.py check --root ROOT --roadmap docs/materialize/roadmap.json --workers 1 2 4
 ```
 
 bind печатает {files: {path: sha256}} для proposal.md и specs/*/spec.md одного change. check ничего не записывает и печатает roadmap_hash, plan_hash, mechanical, plan_consistency, semantic, readiness, next, errors, divergences, refinements, reviews, order, blocked_by_conditions, pairs, scenarios, longest_dependency_chain. Код 0 — READY; 1 — FAIL/UNKNOWN/DIVERGED; 2 — некорректный ввод.
@@ -15,7 +15,7 @@ bind печатает {files: {path: sha256}} для proposal.md и specs/*/spec
 - schema: 1; plan: docs/kickoff/plan.json; plan_hash: SHA256 байтов плана.
 - adapter: docs/kickoff/adapter.json; adapter_hash; adapter.plan_hash обязан совпадать с plan_hash.
 - specs: каталог текущих спецификаций OpenSpec, обычно openspec/specs.
-- reviews: каталог ревью changes, обычно docs/scaffold/reviews.
+- reviews: каталог ревью changes, обычно docs/materialize/reviews.
 - changes: объект по ID **всех** срезов плана.
 - edges: найденные зависимости; pairs: оценки независимости активных changes.
 
@@ -24,7 +24,7 @@ Change: {state: planned|active|archived, path, archive: null|путь, writes: [
 - planned: каталога нет, archive null, files пуст.
 - active: каталог существует, tasks.md есть; files — ровно proposal и spec delta (из bind), хеши актуальны. design/tasks не хешируются: их правка при реализации не меняет контракт change.
 - archived: каталог перенесён в archive, files пуст; spec delta уже применены к specs. Пары с архивированными changes удаляй.
-- Active и archived допустимы, только если все зависимости change архивированы. Число активных changes и execution плана не ограничивают scaffold.
+- Active и archived допустимы, только если все зависимости change архивированы. Число активных changes и execution плана не ограничивают materialize.
 
 Edge: {change, depends_on, kind, reason, evidence: [точные ссылки]}. kind: api, data, migration, spec, code, package, config, fixture, resource, scenario, manual. Не повторяй зависимости плана. Зависимости из spec delta скрипт выводит сам (source=derived).
 
@@ -48,7 +48,7 @@ Pair: {a, b, status: independent|conflict|unknown, reason, evidence}. Неупо
 1. Для создаваемого change сверь фактические точки касания в коде: модули, публичные API, схемы и миграции (включая нумерацию), пакеты и lockfile, конфигурацию, fixtures, генерируемый код, окружения, внешние аккаунты, ручные действия. Разные файлы не доказывают независимость; общий модуль не всегда означает конфликт.
 2. Сценарий, требующий результата другого change, — зависимость, даже при разных файлах.
 3. Оцени пары создаваемого change с каждым активным change по evidence из репозитория. Оценка плана — отправная точка: conflict плана скрипт сохраняет, independent нужно подтвердить заново.
-4. check выдаёт варианты для 1/2/4 исполнителей (либо чисел из аргументов `/scaffold parallel`). Размер найденной волны — допустимая раскладка, не доказанный максимум. Без estimates время и экономия — UNKNOWN; не подставляй условные размеры.
+4. check выдаёт варианты для 1/2/4 исполнителей (либо чисел из аргументов `/materialize parallel`). Размер найденной волны — допустимая раскладка, не доказанный максимум. Без estimates время и экономия — UNKNOWN; не подставляй условные размеры.
 5. Если репозиторий допускает больше или требует меньше параллелизма, чем выбрано в плане, это рекомендация или divergence для `/kickoff revise`, а не правка волн.
 
 ## Review
@@ -66,6 +66,6 @@ Pair: {a, b, status: independent|conflict|unknown, reason, evidence}. Неупо
 
 Отсутствующее или не PASS ревью активного change даёт blocked. Прежний PASS автоматически не переносится.
 
-## 08-scaffold.md
+## 08-materialize.md
 
 plan_hash, roadmap_hash; решение последнего запуска; таблица change → каталог, волна, состояние, capabilities; уточнения и расхождения с действием; существенные пары с основаниями и неизвестные пары с необходимыми данными; варианты 1/2/4 с ограничениями и рекомендация с учётом интеграции, ручных действий и накладных расходов. Источник — roadmap.json и вывод check; Markdown не редактируется независимо.
