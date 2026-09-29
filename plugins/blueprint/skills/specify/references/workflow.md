@@ -1,14 +1,14 @@
 # Команды и рабочий цикл
 
-Все команды используют Python 3.10+ со стандартной библиотекой. Ни один инструмент не вызывает LLM, не выполняет код проекта и не требует старых скилов. Ниже команды выполняются из корня проекта, путь к specctl при установке в другое место заменяется абсолютным.
+Все команды используют Python 3.10+ со стандартной библиотекой. Ни один инструмент не вызывает LLM, не выполняет код проекта и не требует старых скилов. Ниже команды выполняются из корня проекта. SKILL — фактический каталог скила specify (тот, где лежит его SKILL.md): подставляй его абсолютный путь, а аргументы экранируй для текущего shell.
 
 ## Инициализация и источники
 
 Обязательный вход — `docs/00-exploration.md`, результат `/explore`. Это исходный документ вне хранилища спецификации. При другом расположении передай `init --exploration <путь-к-00-exploration.md>`; при нестандартном --root путь по умолчанию ищется рядом с каталогом хранилища. Без файла или с пустым/не-UTF-8 файлом инициализация завершается ошибкой до создания хранилища. Утверждение и смысловую достаточность exploration проверяет исполнитель скила, а не парсер заголовка.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py --root docs/specification init --profile compact
-python .claude/skills/specify/scripts/specctl.py --root docs/specification source --file additional-context.md --id SRC-001
+python SKILL/scripts/specctl.py --root docs/specification init --profile compact
+python SKILL/scripts/specctl.py --root docs/specification source --file additional-context.md --id SRC-001
 ```
 
 init требует новый каталог; существующий не очищается. `--profile` (по умолчанию compact) записывает в policy.json последовательность стадий: compact — REQ, DESIGN; extended — REQ, ARCH, DESIGN. Стадия вне профиля отвергается в begin, check и approve. Начальная ревизия (`schema: 2`) содержит `SRC-EXPLORATION` и неизменный снимок исходного файла; документов стадий в ней ещё нет. Она не означает успешную проверку или утверждение создаваемой спецификации. source используется для дополнительных материалов: сохраняет байты UTF-8 файла под SHA-256 и печатает JSON сущности. Вставь эту сущность в кандидат, сохраняя уже имеющийся SRC-EXPLORATION. Статус нормативности и scope опиши в statement/data: импорт файла сам по себе не делает все его предложения требованиями.
@@ -22,7 +22,7 @@ policy.json (`version: 2`, `profile`, `stages` — ровно стадии пр�
 Создай новый `.blueprint/specify/<run-id>/` для вспомогательных файлов. Подготовь generation-contract.json по assets/contract.json, затем выбери ещё не существующий дочерний каталог package:
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py begin --stage REQ --contract .blueprint/specify/run-001/generation-contract.json --work .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py begin --stage REQ --contract .blueprint/specify/run-001/generation-contract.json --work .blueprint/specify/run-001/package
 ```
 
 Примеры `run-001` — обозначения: для каждого запуска выбирай новый ID, не переиспользуй каталог. Все команды ниже принимают `--root`, если используется другой путь хранилища; глобальный --root ставится перед именем команды.
@@ -30,16 +30,16 @@ python .claude/skills/specify/scripts/specctl.py begin --stage REQ --contract .b
 begin копирует текущую ревизию и контракт. В candidate.json добавь маленький согласованный блок сущностей, связей и текста. Сохрани существующие ID. Для перехода к следующей стадии профиля (REQ→DESIGN, в extended REQ→ARCH→DESIGN) begin требует утверждения предыдущей текущей стадии и запрещает пропуск. Для обратного изменения используй текущую стадию, исправляя ранние сущности и зависимые документы в одном пакете.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py impact --package .blueprint/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py check --package .blueprint/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py prepare-review --package .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py impact --package .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py check --package .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py prepare-review --package .blueprint/specify/run-001/package
 ```
 
 impact сообщает изменённые сущности/рёбра и консервативное замыкание зависимостей, включая документы. Он не является сертификатом минимального scope.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py diff --package .blueprint/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py show --package .blueprint/specify/run-001/package FR-001 E-SC-001
+python SKILL/scripts/specctl.py diff --package .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py show --package .blueprint/specify/run-001/package FR-001 E-SC-001
 ```
 
 diff печатает изменения на уровне полей (новые и изменённые сущности с путями `data.<ключ>`, рёбра, разделы документов) относительно базы и, для пакета из `--from`, относительно предыдущего пакета. show печатает сущности или рёбра кандидата по ID; у сущности добавляется список инцидентных рёбер. Используй их вместо разовых скриптов сравнения и просмотра.
@@ -61,7 +61,7 @@ review-request фиксирует дайджесты источников нас
 prepare-review также делит рёбра UNKNOWN на шарды `shards/S-XX.json` — до 30 рёбер, сгруппированных по разделам документов. Шард самодостаточен для оценки своих рёбер: рёбра с причиной (`why`), полные сущности концов, поля, изменённые относительно базы, соседние связи того же уровня (новые — с rationale) и краткие формулировки оснований. Прежних оценок в нём нет. Нужное сверх шарда смотри через `show`, исходники — в sources. Ответ шарда записывается в `shards/S-XX.result.json` по его `result_template`; `notes` — кандидаты в findings для основного ревьюера. Шарды можно проходить последовательно или передать отдельным агентам, если это разрешено (SKILL.md).
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py assess --package .blueprint/specify/run-001/package .blueprint/specify/run-001/package/shards/S-01.result.json review-main.json
+python SKILL/scripts/specctl.py assess --package .blueprint/specify/run-001/package .blueprint/specify/run-001/package/shards/S-01.result.json review-main.json
 ```
 
 assess вносит в review.json JSON-файлы оценок: `edges`, `criteria`, `formal`, `runtime`, `reviewer`, `findings` (замена по id) и необязательный `shard`. Для файла с `shard` принимаются только рёбра этого шарда. Каждая оценка — свежая `{status, reason, evidence}`: поля `inherited`/`context` и неизвестные ссылки отвергаются, PASS без evidence тоже. Команда проверяет актуальность identity, печатает применённое, оставшиеся UNKNOWN и notes. Это синтаксическая сборка, а не проверка качества ревью; полные gates даёт check. Используй assess вместо самописных скриптов, собирающих review.json.
@@ -69,15 +69,15 @@ assess вносит в review.json JSON-файлы оценок: `edges`, `crite
 Для исправленного кандидата создай новый пакет от непринятого:
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py begin --stage REQ --from .blueprint/specify/run-001/package --work .blueprint/specify/run-002/package
+python SKILL/scripts/specctl.py begin --stage REQ --from .blueprint/specify/run-001/package --work .blueprint/specify/run-002/package
 ```
 
 `--from` требует ту же стадию и ту же базу, что у CURRENT; копирует candidate.json и contract.json (`--contract` заменяет контракт) и записывает источник в package.json. prepare-review переносит весь реестр findings этого пакета и открытые findings базы, check требует сохранить открытые из обоих. Старый пакет оставь для истории и не меняй: его правка лишает новый пакет унаследованных оценок. Если изменились CURRENT или policy, прежнее ревью устарело; при переносе на новую базу анализируй изменения обеих сторон, не копируй старый snapshot поверх новой ревизии целиком.
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py check --package .blueprint/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py accept --package .blueprint/specify/run-001/package
-python .claude/skills/specify/scripts/specctl.py status
+python SKILL/scripts/specctl.py check --package .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py accept --package .blueprint/specify/run-001/package
+python SKILL/scripts/specctl.py status
 ```
 
 check до ревью показывает mechanical и semantic=UNKNOWN. После появления review.json проверяет документный/formal/runtime gates и актуальность identity. accept повторяет проверку под блокировкой, публикует только PASS, выдаёт ID ревизии. Актуальные документы находятся в docs/01-requirements.md, docs/02-architecture.md (extended) и docs/03-design.md; status возвращает профиль, признак final_stage (текущая стадия — последняя в профиле), пути документов в documents, а архив ревизии — в artifacts. При другом --root документы находятся рядом с каталогом хранилища. accepted не равно approved.
@@ -89,7 +89,7 @@ check до ревью показывает mechanical и semantic=UNKNOWN. По�
 После принятия этого пакета покажи конкретную ревизию пользователю. Только получив утверждение, запиши его:
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py approve --stage REQ --decision "Ссылка на фактический ответ пользователя и его точная формулировка"
+python SKILL/scripts/specctl.py approve --stage REQ --decision "Ссылка на фактический ответ пользователя и его точная формулировка"
 ```
 
 Эта команда **регистрирует**, а не получает согласие пользователя. Не подставляй пример из инструкции вместо реального решения. Скрипт не может аутентифицировать автора строки. Для обратных правок отдельно назови все затронутые ранние документы; можно записать несколько утверждений одной принятой ревизии. Переход вперёд требует утверждения её текущей стадии.
@@ -110,7 +110,7 @@ python .claude/skills/specify/scripts/specctl.py approve --stage REQ --decision 
 
 Сначала пишутся файлы новой ревизии и manifest, затем журнал DOCS-PENDING.json. После проверки всех путей назначения каждый актуальный документ стадии в docs/ заменяется через os.replace, затем переключается CURRENT и удаляется журнал. Замена всего набора файлов не атомарна: пока журнал существует, CLI блокирует чтение согласованного состояния и следующие пакеты. Для стороннего читателя перед чтением нескольких документов требуется успешный status и отсутствие активного писателя; архив выбранной ревизии остаётся неизменным. WRITE.lock запрещает конкурентную публикацию через этот CLI; base предотвращает потерю чужой принятой работы. Это не распределённое хранилище и не гарантия сохранности при физической потере диска. Хеши выявляют случайную правку, но не являются подписью против злоумышленника.
 
-После аварии возможны незавершённый каталог ревизии, временные файлы, DOCS-PENDING.json или оставшийся WRITE.lock. Не объявляй самый новый каталог принятым. Зафиксируй состояние, проверь отсутствие живого процесса-писателя, сохрани копию материалов. Только после установления причины вручную убери оставшуюся блокировку. При наличии журнала выполни `python .claude/skills/specify/scripts/specctl.py sync-docs`: команда проверяет новую ревизию и все назначения, завершает публикацию и переключает CURRENT. Она принимает только прежние/новые ожидаемые байты, а при посторонней правке останавливается. Без журнала sync-docs восстанавливает отсутствующие актуальные документы из CURRENT, но не затирает изменённые. Затем проверь status. Автоматического удаления lock по времени нет.
+После аварии возможны незавершённый каталог ревизии, временные файлы, DOCS-PENDING.json или оставшийся WRITE.lock. Не объявляй самый новый каталог принятым. Зафиксируй состояние, проверь отсутствие живого процесса-писателя, сохрани копию материалов. Только после установления причины вручную убери оставшуюся блокировку. При наличии журнала выполни `python SKILL/scripts/specctl.py sync-docs`: команда проверяет новую ревизию и все назначения, завершает публикацию и переключает CURRENT. Она принимает только прежние/новые ожидаемые байты, а при посторонней правке останавливается. Без журнала sync-docs восстанавливает отсутствующие актуальные документы из CURRENT, но не затирает изменённые. Затем проверь status. Автоматического удаления lock по времени нет.
 
 Если документы стадий в docs/ существовали ещё до первой публикации, accept не перезаписывает их. Сначала сохрани и согласуй их как входящие материалы. Ручная правка актуального документа также блокирует status/accept: сохрани её, восстанови точную прежнюю публикацию из архива и внеси правку новым пакетом. Нельзя менять manifest-хеши ради обхода защиты.
 
@@ -119,7 +119,7 @@ python .claude/skills/specify/scripts/specctl.py approve --stage REQ --decision 
 ## Валидация поставки
 
 ```bash
-python -B -X utf8 -m unittest discover -s .claude/skills/specify/scripts -p test_specctl.py -v
+python -B -X utf8 -m unittest discover -s SKILL/scripts -p test_specctl.py -v
 ```
 
 Тесты используют временные изолированные каталоги и синтетические оценки. Они проверяют принятие, актуальность, конфликты, gates и сохранность публикации, но не качество будущего LLM-ревью. Фактический независимый прогон Claude Code оценивается отдельно на репрезентативном проекте.

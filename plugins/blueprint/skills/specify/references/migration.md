@@ -41,8 +41,10 @@
 ## 3. Новое хранилище и источники
 
 ```bash
-python .claude/skills/specify/scripts/specctl.py --root docs/specification init --profile compact
+python SKILL/scripts/specctl.py --root docs/specification init --profile compact
 ```
+
+SKILL — фактический каталог скила specify, как в [workflow.md](workflow.md).
 
 Затем приведи `policy.json` к согласованной политике до первого `prepare-review`.
 
