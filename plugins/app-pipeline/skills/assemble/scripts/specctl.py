@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Standalone specification transactions. Python 3.10+, standard library only.
 
-Run --help for commands. This engine validates structure and bounded decision
-tables. Semantic review is recorded evidence supplied by a reviewer, not inferred
+Run --help for commands. This engine validates structure, bounded decision
+tables and closed-vocabulary state machines. Semantic review is recorded evidence supplied by a reviewer, not inferred
 from exit 0. Immutable revisions back the documents in the store's parent
 directory. A journal detects interrupted document publication. No project imports.
 """
@@ -158,6 +158,141 @@ def import_source(root, path, key):
             'data': {'sha256': sha, 'original': str(path.resolve())}}
 
 
+def domains(factors, label):
+    """Validate finite scalar domains; return the number of cells in their product."""
+    need(isinstance(factors, dict), label + ' must be an object')
+    size = 1
+    for name, values in factors.items():
+        token(name)
+        need(isinstance(values, list) and values and all(type(v) in (str, int, bool, type(None)) for v in values), 'Invalid factor domain')
+        need(len({canonical(v) for v in values}) == len(values), 'Duplicate domain values')
+        size *= len(values)
+    return size
+
+
+def matches(when, cell):
+    return all(canonical(cell[n]) in {canonical(v) for v in vs} for n, vs in when.items())
+
+
+def names(value, vocabulary, label):
+    """A state/event reference: one name or a nonempty list, all from the closed vocabulary."""
+    value = [value] if isinstance(value, str) else value
+    need(isinstance(value, list) and value and all(isinstance(v, str) and v in vocabulary for v in value), 'Unknown ' + label + ': ' + str(value))
+    return value
+
+
+def loose_hints(data):
+    """Obvious defects of a free-form machine; advisory only, the result stays UNKNOWN."""
+    transitions = data.get('transitions')
+    if not (isinstance(transitions, list) and all(isinstance(t, dict) and isinstance(t.get('from'), str) and isinstance(t.get('to'), str) for t in transitions)):
+        return []
+    sources, targets = {t['from'] for t in transitions}, {t['to'] for t in transitions}
+    terminal = set(data.get('terminal') or [])
+    hints = []
+    if isinstance(data.get('states'), list):
+        extra = sorted((sources | targets | {data.get('initial')}) - set(data['states']) - {None})
+        if extra:
+            hints.append('Names outside states: ' + ', '.join(extra))
+    sinks = sorted(targets - sources - terminal)
+    if sinks:
+        hints.append('No outgoing transition and not terminal: ' + ', '.join(sinks))
+    reached, pending = set(), [data.get('initial')]
+    while pending:
+        state = pending.pop()
+        if state not in reached:
+            reached.add(state)
+            pending.extend(t['to'] for t in transitions if t['from'] == state)
+    unreachable = sorted((sources | targets) - reached)
+    if unreachable:
+        hints.append('Unreachable from initial: ' + ', '.join(unreachable))
+    return hints
+
+
+def state_machine_check(entity):
+    """Closed vocabularies and finite guards: determinism, completeness, reachability, exit.
+
+    Every non-terminal state must handle or explicitly ignore every event in every guard
+    cell. The graph checks are necessary conditions only: no fairness or timing.
+    """
+    data = entity['data']
+    if 'events' not in data:
+        return {'id': entity['id'], 'status': 'UNKNOWN', 'hints': loose_hints(data),
+                'reason': 'state_machine without closed states/events vocabularies is not checkable; see schema.md'}
+    need(set(data) <= {'representation', 'states', 'initial', 'terminal', 'events', 'guards', 'transitions', 'ignored', 'note'}, 'Unsupported state-machine fields')
+    states, events, terminal = data.get('states'), data.get('events'), data.get('terminal')
+    for label, vocabulary in (('states', states), ('events', events)):
+        need(isinstance(vocabulary, list) and vocabulary and all(isinstance(v, str) and v.strip() for v in vocabulary), 'State machine needs nonempty ' + label)
+        need(len(set(vocabulary)) == len(vocabulary), 'Duplicate ' + label)
+    need(data.get('initial') in states, 'Initial state outside states')
+    need(isinstance(terminal, list) and len(set(terminal)) == len(terminal) and set(terminal) <= set(states), 'terminal must list distinct states (empty for a cyclic machine)')
+    need(data['initial'] not in terminal, 'Initial state cannot be terminal')
+    guards = data.get('guards', {})
+    size = len(states) * len(events) * domains(guards, 'guards')
+    need(size <= 100000, 'State machine exceeds 100000 state/event/guard cells; partition its scope')
+    def condition(item):
+        when = item.get('when', {})
+        need(isinstance(when, dict) and set(when) <= set(guards), 'Unknown guard factor')
+        for name, values in when.items():
+            need(isinstance(values, list) and values and all(canonical(v) in {canonical(x) for x in guards[name]} for v in values), 'Guard condition outside domain')
+        return when
+    transitions = data.get('transitions')
+    need(isinstance(transitions, list) and transitions, 'State machine needs transitions')
+    rules = []
+    for item in transitions:
+        need(isinstance(item, dict) and set(item) <= {'from', 'on', 'when', 'to', 'effects', 'note'}, 'Unsupported transition fields; encode priority in disjoint guards')
+        sources, on = names(item.get('from'), states, 'state'), names(item.get('on'), events, 'event')
+        need(isinstance(item.get('to'), str) and item['to'] in states, 'Unknown target state: ' + str(item.get('to')))
+        need(not set(sources) & set(terminal), 'Terminal state has an outgoing transition')
+        effects = item.get('effects', {})
+        need(isinstance(effects, dict) and all(type(v) in (str, int, bool, type(None)) for v in effects.values()), 'Transition effects must be scalar')
+        rules.append((set(sources), set(on), condition(item), canonical([item['to'], effects]), item['to']))
+    ignored = data.get('ignored', [])
+    need(isinstance(ignored, list), 'ignored must be a list')
+    skips = []
+    for item in ignored:
+        need(isinstance(item, dict) and set(item) <= {'states', 'events', 'when', 'reason'}, 'Unsupported ignored fields')
+        need(isinstance(item.get('reason'), str) and item['reason'].strip(), 'Ignored event needs a reason')
+        skips.append((set(names(item.get('states'), states, 'state')), set(names(item.get('events'), events, 'event')), condition(item)))
+    cells = [dict(zip(guards, values)) for values in itertools.product(*guards.values())]
+    problems, graph = [], {s: set() for s in states}
+    for state in states:
+        if state in terminal:
+            continue
+        for event in events:
+            for cell in cells:
+                hits = [r for r in rules if state in r[0] and event in r[1] and matches(r[2], cell)]
+                skipped = any(state in k[0] and event in k[1] and matches(k[2], cell) for k in skips)
+                outcomes = {r[3] for r in hits}
+                if len(outcomes) > 1 or (outcomes and skipped):
+                    problems.append({'kind': 'CONFLICT', 'state': state, 'event': event, 'cell': cell})
+                elif not outcomes and not skipped:
+                    problems.append({'kind': 'UNDEFINED', 'state': state, 'event': event, 'cell': cell})
+                graph[state].update(r[4] for r in hits)
+    reached, pending = set(), [data['initial']]
+    while pending:
+        state = pending.pop()
+        if state not in reached:
+            reached.add(state)
+            pending.extend(graph[state] - reached)
+    problems += [{'kind': 'UNREACHABLE', 'state': s} for s in states if s not in reached]
+    # Exit: a terminal state, or back to initial for a cyclic machine.
+    exits, pending = set(), list(terminal or [data['initial']])
+    while pending:
+        state = pending.pop()
+        if state not in exits:
+            exits.add(state)
+            pending.extend(s for s in states if state in graph[s] and s not in exits)
+    problems += [{'kind': 'TRAP', 'state': s} for s in states if s in reached and s not in exits]
+    return {'id': entity['id'], 'status': 'FAIL' if problems else 'PASS', 'states': len(states),
+            'cells': len(states) * len(events) * len(cells), 'problem_count': len(problems), 'examples': problems[:10]}
+
+
+def model_check(entity):
+    if entity['data'].get('representation') == 'state_machine':
+        return state_machine_check(entity)
+    return decision_check(entity)
+
+
 def decision_check(entity):
     """Exact scalar matches; explicit allowed cells, no expressions or eval."""
     data = entity['data']
@@ -167,13 +302,7 @@ def decision_check(entity):
     factors, slots, rules = data.get('factors'), data.get('slots'), data.get('rules')
     need(isinstance(factors, dict) and factors, 'Decision table needs factors')
     need(isinstance(slots, dict) and slots and all(v in ('required', 'optional') for v in slots.values()), 'Invalid slots')
-    size = 1
-    for name, values in factors.items():
-        token(name)
-        need(isinstance(values, list) and values and all(type(v) in (str, int, bool, type(None)) for v in values), 'Invalid factor domain')
-        need(len({canonical(v) for v in values}) == len(values), 'Duplicate domain values')
-        size *= len(values)
-    need(size <= 100000, 'Decision table exceeds 100000 cells; partition its scope')
+    need(domains(factors, 'factors') <= 100000, 'Decision table exceeds 100000 cells; partition its scope')
     need(isinstance(rules, list), 'Rules must be a list')
     names = list(factors)
     all_cells = [dict(zip(names, values)) for values in itertools.product(*(factors[n] for n in names))]
@@ -192,7 +321,7 @@ def decision_check(entity):
             need(isinstance(values, list) and values and all(canonical(v) in {canonical(x) for x in factors[name]} for v in values), 'Condition outside domain')
     problems = []
     for cell in cells:
-        hits = [r for r in rules if all(canonical(cell[n]) in {canonical(v) for v in vs} for n, vs in r['when'].items())]
+        hits = [r for r in rules if matches(r['when'], cell)]
         for slot, obligation in slots.items():
             values = {canonical(r['effects'][slot]) for r in hits if slot in r['effects']}
             if len(values) > 1 or (not values and obligation == 'required'):
@@ -231,7 +360,7 @@ def validate(root, snapshot):
         if entity['status'] == 'active':
             need(all(entities[x]['status'] == 'active' for x in entity['basis']), 'Active entity depends on superseded basis: ' + key)
             if STAGES.index(entity['stage']) <= active_stage and entity['kind'] == 'behavior':
-                model_results.append(decision_check(entity))
+                model_results.append(model_check(entity))
     # Origins may not be circular; a source must eventually ground every chain.
     visiting, visited = set(), set()
     def visit(key):

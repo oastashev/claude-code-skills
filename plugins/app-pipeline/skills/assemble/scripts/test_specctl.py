@@ -380,6 +380,24 @@ class Transactions(unittest.TestCase):
         with self.assertRaisesRegex(s.Invalid, 'Previously open'):
             s.review_gate(self.root, new)
 
+    def test_state_machine_defect_blocks_review_and_pass_supports_formal(self):
+        folder = self.package()
+        snapshot = s.load(folder / 'candidate.json')
+        machine = StateMachines().spec()
+        snapshot['entities']['BH-RUN'] = self.entity('BH-RUN', 'behavior', machine['data'], ['BR-1'])
+        snapshot['documents']['BRD']['sections'][0]['entities'].append('BH-RUN')
+        broken = copy.deepcopy(snapshot); del broken['entities']['BH-RUN']['data']['ignored'][0]
+        self.save(folder / 'candidate.json', broken)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(s.main(['--root', str(self.root), 'check', '--package', str(folder)]), 1)
+        self.assertEqual(json.loads(output.getvalue())['models'][0]['examples'][0]['kind'], 'UNDEFINED')
+        self.save(folder / 'candidate.json', snapshot)
+        review = self.reviewed(folder)
+        review['formal'] = {'status': 'PASS', 'reason': 'Built-in state-machine check passed', 'evidence': ['mechanical-report']}
+        self.save(folder / 'review.json', review)
+        self.assertEqual(s.review_gate(self.root, folder)[0]['gates']['formal'], 'PASS')
+
     def test_fragment_inherits_pass_only_for_unchanged_edges(self):
         self.fragment()
         folder = self.package(); self.reviewed(folder); accepted = json.loads(self.call('accept', '--package', str(folder)))['revision']
@@ -471,8 +489,88 @@ class DecisionTables(unittest.TestCase):
             s.decision_check(spec)
 
     def test_unimplemented_model_is_unknown_not_pass(self):
-        spec = self.spec(); spec['data']['representation'] = 'state_machine'
-        self.assertEqual(s.decision_check(spec)['status'], 'UNKNOWN')
+        spec = self.spec(); spec['data']['representation'] = 'sequence'
+        self.assertEqual(s.model_check(spec)['status'], 'UNKNOWN')
+
+
+class StateMachines(unittest.TestCase):
+    def spec(self):
+        return {'id': 'BH-RUN', 'data': {'representation': 'state_machine', 'states': ['created', 'running', 'exited'],
+                'initial': 'created', 'terminal': ['exited'], 'events': ['start', 'fail', 'abort'],
+                'guards': {'attempts': ['below-limit', 'at-limit']},
+                'transitions': [
+                    {'from': 'created', 'on': 'start', 'to': 'running'},
+                    {'from': 'running', 'on': 'fail', 'when': {'attempts': ['below-limit']}, 'to': 'running', 'effects': {'attempts': '+1'}},
+                    {'from': 'running', 'on': 'fail', 'when': {'attempts': ['at-limit']}, 'to': 'exited'},
+                    {'from': ['created', 'running'], 'on': 'abort', 'to': 'exited'}],
+                'ignored': [{'states': 'created', 'events': 'fail', 'reason': 'Nothing runs before start'},
+                            {'states': 'running', 'events': 'start', 'reason': 'Start is idempotent while running'}]}}
+
+    def problems(self, spec):
+        result = s.model_check(spec)
+        return result['status'], {(p['kind'], p['state'], p.get('event'), canonical_cell(p.get('cell'))) for p in result['examples']}
+
+    def test_complete_deterministic_machine_passes(self):
+        self.assertEqual(s.model_check(self.spec())['status'], 'PASS')
+
+    def test_unhandled_guard_cell_is_undefined(self):
+        spec = self.spec(); del spec['data']['transitions'][2]
+        self.assertEqual(self.problems(spec), ('FAIL', {('UNDEFINED', 'running', 'fail', '{"attempts":"at-limit"}')}))
+
+    def test_overlapping_outcomes_and_ignored_handled_event_conflict(self):
+        spec = self.spec(); spec['data']['transitions'].append({'from': 'running', 'on': 'abort', 'to': 'created'})
+        self.assertIn(('CONFLICT', 'running', 'abort', '{"attempts":"at-limit"}'), self.problems(spec)[1])
+        spec = self.spec(); spec['data']['transitions'][1]['effects'] = {'attempts': 'unchanged'}
+        spec['data']['transitions'].append({'from': 'running', 'on': 'fail', 'when': {'attempts': ['below-limit']}, 'to': 'running', 'effects': {'attempts': '+1'}})
+        self.assertIn(('CONFLICT', 'running', 'fail', '{"attempts":"below-limit"}'), self.problems(spec)[1])
+        spec = self.spec(); spec['data']['ignored'].append({'states': 'running', 'events': 'abort', 'reason': 'Contradicts the abort rule'})
+        self.assertEqual(self.problems(spec)[0], 'FAIL')
+
+    def test_state_without_exit_is_trap_and_orphan_is_unreachable(self):
+        spec = self.spec(); data = spec['data']
+        data['states'] += ['stopping', 'orphan']
+        data['transitions'][3]['from'] = 'created'
+        data['transitions'].append({'from': 'running', 'on': 'abort', 'to': 'stopping'})
+        data['ignored'].append({'states': ['stopping', 'orphan'], 'events': ['start', 'fail', 'abort'], 'reason': 'Waiting'})
+        kinds = {(k, st) for k, st, _, _ in self.problems(spec)[1]}
+        self.assertEqual(kinds, {('TRAP', 'stopping'), ('UNREACHABLE', 'orphan')})
+
+    def test_cyclic_machine_must_return_to_initial(self):
+        spec = {'id': 'BH-ENV', 'data': {'representation': 'state_machine', 'states': ['ok', 'failing'], 'initial': 'ok', 'terminal': [],
+                'events': ['failure', 'recovered'], 'transitions': [
+                    {'from': ['ok', 'failing'], 'on': 'failure', 'to': 'failing'}, {'from': 'failing', 'on': 'recovered', 'to': 'ok'}],
+                'ignored': [{'states': 'ok', 'events': 'recovered', 'reason': 'Nothing to recover'}]}}
+        self.assertEqual(s.model_check(spec)['status'], 'PASS')
+        spec['data']['transitions'][1]['to'] = 'failing'
+        self.assertIn(('TRAP', 'failing', None, 'null'), self.problems(spec)[1])
+
+    def test_free_form_machine_stays_unknown_with_hints(self):
+        spec = {'id': 'BH-OLD', 'data': {'representation': 'state_machine', 'initial': 'start', 'terminal': ['done'], 'transitions': [
+            {'from': 'start', 'on': 'push accepted', 'to': 'apply'}, {'from': 'apply', 'on': 'attempts = N', 'to': 'stopping'},
+            {'from': 'apply', 'on': 'finished', 'to': 'done'}]}}
+        result = s.model_check(spec)
+        self.assertEqual(result['status'], 'UNKNOWN')
+        self.assertIn('No outgoing transition and not terminal: stopping', result['hints'])
+
+    def test_malformed_machine_rejected(self):
+        for defect in ('event', 'composite', 'terminal', 'guard', 'field'):
+            spec = self.spec(); data = spec['data']
+            if defect == 'event':
+                data['transitions'][0]['on'] = 'launch'
+            elif defect == 'composite':
+                data['transitions'][0]['to'] = 'parked→queued'
+            elif defect == 'terminal':
+                data['transitions'].append({'from': 'exited', 'on': 'start', 'to': 'running'})
+            elif defect == 'guard':
+                data['transitions'][1]['when'] = {'attempts': ['attempts < N']}
+            else:
+                data['transitions'][0]['priority'] = 1
+            with self.subTest(defect=defect), self.assertRaises(s.Invalid):
+                s.model_check(spec)
+
+
+def canonical_cell(cell):
+    return s.canonical(cell)
 
 
 if __name__ == '__main__':
