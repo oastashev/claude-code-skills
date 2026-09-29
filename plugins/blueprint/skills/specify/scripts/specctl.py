@@ -28,6 +28,16 @@ KINDS = ('source', 'user_decision', 'obligation', 'term', 'contract', 'decision'
          'behavior', 'scenario', 'component', 'module', 'task', 'question', 'assumption', 'evidence')
 RELATIONS = ('derives', 'refines', 'implements', 'verifies', 'depends_on', 'supersedes', 'conflicts')
 ID = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,79}\Z')
+# Stage-review re-reads this share (percent, bounded) of inherited current-stage edges chosen by the script.
+SPOT_CHECK = (10, 5, 30)
+NOT_REVIEWED = {'changed': 'Not reviewed: the edge or an end changed, or the reviewed state has no PASS for it',
+                'context': 'Not reviewed: relations of an end changed since the last fresh assessment',
+                'spot-check': 'Not reviewed: spot check of inherited assessments'}
+# Edges per review shard: one reviewer pass reads a shard whole.
+SHARD_EDGES = 30
+FIELD_PATH = re.compile(r'([^#]+)#(.+)\Z')
+PATH_SEGMENT = re.compile(r'([^.\[\]]+)((?:\[\d+\])*)\Z')
+QUALITY = Path(__file__).resolve().parent.parent / 'references' / 'quality.md'
 
 
 class Invalid(ValueError):
@@ -460,7 +470,8 @@ def impact(before, after):
                  any(set(sec['entities']) & affected for sec in after['documents'].get(s, {}).get('sections', []))]
     return {'changed_entities': sorted(changed), 'changed_edges': sorted(edge_changes),
             'affected_entities': sorted(affected), 'affected_documents': sorted(documents),
-            'review_scope': 'criteria: entire candidate; edges: fresh unless an unchanged edge inherits a prior PASS (fragment only)'}
+            'review_scope': 'criteria: entire candidate; edges: fresh unless an unchanged edge inherits a prior PASS '
+                            '(stage-review: only while its context is unchanged since the last fresh reading, minus a spot check)'}
 
 
 def entity_changes(before, after):
@@ -496,7 +507,27 @@ def due(edge, stage):
 
 
 def without_inheritance(assessment):
-    return {k: v for k, v in assessment.items() if k != 'inherited'}
+    return {k: v for k, v in assessment.items() if k not in ('inherited', 'context')}
+
+
+def incidence(snapshot):
+    result = {}
+    for key, edge in snapshot['edges'].items():
+        for end in (edge['from'], edge['to']):
+            result.setdefault(end, set()).add(key)
+    return result
+
+
+def edge_context(snapshot, index, key):
+    """What an edge assessment reads: both ends and their relations up to the edge's own due_stage.
+
+    Later-stage refinements of an end do not reopen an earlier edge; a new sibling relation does.
+    """
+    edge = snapshot['edges'][key]
+    ends = (edge['from'], edge['to'])
+    limit = STAGES.index(edge['due_stage'])
+    related = sorted({k for end in ends for k in index.get(end, ()) if STAGES.index(snapshot['edges'][k]['due_stage']) <= limit})
+    return digest({'entities': {end: snapshot['entities'][end] for end in ends}, 'edges': {k: snapshot['edges'][k] for k in related}})
 
 
 def prior_reviews(root, folder, meta):
@@ -513,11 +544,11 @@ def prior_reviews(root, folder, meta):
             request, review = load(prior / 'review-request.json'), load(prior / 'review.json')
             if review.get('identity') == request['identity'] == review_identity(root, prior, pmeta, snapshot) and \
                     isinstance(review.get('reviewer'), str) and review['reviewer'].strip() and isinstance(review.get('edges'), dict):
-                priors.append({'label': 'package:' + pmeta['id'], 'snapshot': snapshot, 'review': review})
+                priors.append({'label': 'package:' + pmeta['id'], 'snapshot': snapshot, 'review': review, 'index': incidence(snapshot)})
     snapshot, manifest = read_revision(root, meta['base'], check_exports=False)
     review = load(root / 'revisions' / meta['base'] / 'review.json')
     if isinstance(review.get('edges'), dict) and manifest['policy_hash'] == digest(policy(root)):
-        priors.append({'label': 'revision:' + meta['base'], 'snapshot': snapshot, 'review': review})
+        priors.append({'label': 'revision:' + meta['base'], 'snapshot': snapshot, 'review': review, 'index': incidence(snapshot)})
     return priors
 
 
@@ -525,6 +556,49 @@ def inheritable(prior, snapshot, key):
     edge, assessment = snapshot['edges'][key], prior['review']['edges'].get(key)
     return (prior['snapshot']['edges'].get(key) == edge and isinstance(assessment, dict) and assessment.get('status') == 'PASS' and
             all(prior['snapshot']['entities'].get(edge[end]) == snapshot['entities'][edge[end]] for end in ('from', 'to')))
+
+
+def inherited_assessment(prior, key):
+    """The prior PASS with its source label and the context of its last fresh reading.
+
+    A fresh prior assessment gets the context of the prior snapshot; an inherited one passes its context on.
+    Legacy assessments inherited without a context carry none, so stage-review re-reads them.
+    """
+    source = prior['review']['edges'][key]
+    context = source.get('context') if 'inherited' in source else edge_context(prior['snapshot'], prior['index'], key)
+    result = dict(without_inheritance(source), inherited=prior['label'])
+    if isinstance(context, str):
+        result['context'] = context
+    return result
+
+
+def review_plan(snapshot, mode, identity, priors):
+    """Per due edge: ('inherit', assessment) or ('fresh', reason key); future edges are omitted.
+
+    fragment inherits every unchanged PASS. stage-review keeps an inherited PASS only while the edge
+    context is unchanged since its last fresh reading, and re-reads a script-chosen spot check of the
+    rest, so interactions between accepted fragments are read afresh without re-reading the whole graph.
+    """
+    plan, eligible, index = {}, [], incidence(snapshot)
+    for key, edge in sorted(snapshot['edges'].items()):
+        if not due(edge, snapshot['stage']):
+            continue
+        prior = next((p for p in priors if inheritable(p, snapshot, key)), None)
+        if prior is None:
+            plan[key] = ('fresh', 'changed')
+            continue
+        assessment = inherited_assessment(prior, key)
+        if mode == 'stage-review' and assessment.get('context') != edge_context(snapshot, index, key):
+            plan[key] = ('fresh', 'context')
+            continue
+        plan[key] = ('inherit', assessment)
+        if mode == 'stage-review' and edge['due_stage'] == snapshot['stage']:
+            eligible.append(key)
+    share, low, high = SPOT_CHECK
+    count = min(len(eligible), max(low, min(high, -(-len(eligible) * share // 100))))
+    for key in sorted(eligible, key=lambda k: digest([identity, k]))[:count]:
+        plan[key] = ('fresh', 'spot-check')
+    return plan
 
 
 def carried_findings(root, meta, priors):
@@ -559,7 +633,15 @@ def review_brief(meta, contract, snapshot, old, previous, priors, review):
     inherited = sum(1 for a in review['edges'].values() if 'inherited' in a)
     lines.extend(['## Оценки рёбер', '', 'Унаследовано PASS: %d; не наступил due_stage: %d; требуют оценки: %d.' % (
                   inherited, sum(1 for e in edges.values() if not due(e, snapshot['stage'])), len(fresh)), ''])
-    lines.extend('- %s: %s %s → %s' % (k, edges[k]['type'], edges[k]['from'], edges[k]['to']) for k in fresh)
+    groups = (('changed', 'Изменились ребро или его концы либо нет проверенного PASS'),
+              ('context', 'Связи конца изменились после последней свежей оценки — проверь взаимодействие'),
+              ('spot-check', 'Контрольная выборка унаследованных оценок, выбрана скриптом'))
+    for reason, title in groups:
+        keys = [k for k in fresh if review['edges'][k]['reason'] == NOT_REVIEWED[reason]]
+        if keys:
+            lines.extend(['### %s (%d)' % (title, len(keys)), ''])
+            lines.extend('- %s: %s %s → %s' % (k, edges[k]['type'], edges[k]['from'], edges[k]['to']) for k in keys)
+            lines.append('')
     open_findings = [f for f in review['findings'] if f['state'] == 'open']
     lines.extend(['', '## Открытые findings для перепроверки', ''])
     lines.extend(['- %s (%s %s): %s' % (f['id'], f['severity'], f['kind'], str(f.get('closure') or f['reason'])[:300].replace('\n', ' ')) for f in open_findings] or ['Нет.'])
@@ -584,6 +666,132 @@ def candidate(root, folder):
 
 def review_identity(root, folder, meta, snapshot):
     return digest({'package': meta, 'snapshot': snapshot, 'contract': load(folder / 'contract.json'), 'policy': policy(root)})
+
+
+def reference(snapshot, ref):
+    """True for an entity, edge or document ID, mechanical-report, or a field path such as FR-1#data.exceptions[2]."""
+    if not isinstance(ref, str):
+        return False
+    if ref == 'mechanical-report' or ref in snapshot['entities'] or ref in snapshot['edges'] or ref in snapshot['documents']:
+        return True
+    match = FIELD_PATH.match(ref)
+    if not match:
+        return False
+    value = snapshot['entities'].get(match[1]) or snapshot['edges'].get(match[1]) or snapshot['documents'].get(match[1])
+    for part in match[2].split('.'):
+        segment = PATH_SEGMENT.match(part)
+        if value is None or not segment or not isinstance(value, dict) or segment[1] not in value:
+            return False
+        value = value[segment[1]]
+        for index in re.findall(r'\[(\d+)\]', segment[2]):
+            if not isinstance(value, list) or int(index) >= len(value):
+                return False
+            value = value[int(index)]
+    return True
+
+
+def summary(text, size=160):
+    text = ' '.join(text.split())
+    return text if len(text) <= size else text[:size].rstrip() + '… (specctl show для полного текста)'
+
+
+def sections(snapshot):
+    """Entity → (document order, section id): the semantic group a shard follows."""
+    result = {}
+    for order, (stage, doc) in enumerate(sorted(snapshot['documents'].items(), key=lambda x: STAGES.index(x[0]))):
+        for number, section in enumerate(doc['sections']):
+            for key in section['entities']:
+                result.setdefault(key, ((order, number), stage + '/' + section['id']))
+    return result
+
+
+def review_shards(snapshot, old, review):
+    """Split UNKNOWN edges into self-contained reading packets grouped by document section.
+
+    A packet holds the edges, both ends, same-level neighbour relations and basis statements,
+    plus field paths changed against the base. Prior reasons are left out so they are not copied.
+    """
+    placed, index = sections(snapshot), incidence(snapshot)
+    edges, why = snapshot['edges'], {text: key for key, text in NOT_REVIEWED.items()}
+    pending = [k for k, a in review['edges'].items() if a['status'] == 'UNKNOWN']
+    def group(key):
+        edge = edges[key]
+        return placed.get(edge['from']) or placed.get(edge['to']) or ((len(STAGES), 0), 'other')
+    ordered = sorted(pending, key=lambda k: (group(k)[0], edges[k]['to'], k))
+    batches, current = [], []
+    for key in ordered:
+        if current and (len(current) >= SHARD_EDGES or (group(current[-1])[1] != group(key)[1] and len(current) >= SHARD_EDGES // 2)):
+            batches.append(current)
+            current = []
+        current.append(key)
+    if current:
+        batches.append(current)
+    shards = []
+    for number, keys in enumerate(batches, 1):
+        ends = sorted({edges[k][x] for k in keys for x in ('from', 'to')})
+        limit = {k: STAGES.index(edges[k]['due_stage']) for k in keys}
+        neighbours = sorted({n for k in keys for x in ('from', 'to') for n in index.get(edges[k][x], ())
+                             if n not in keys and STAGES.index(edges[n]['due_stage']) <= limit[k]})
+        changes = {x: ('new' if x not in old['entities'] else entity_changes(old['entities'][x], snapshot['entities'][x]))
+                   for x in ends if old['entities'].get(x) != snapshot['entities'][x]}
+        basis = sorted({b for x in ends for b in snapshot['entities'][x]['basis']} - set(ends))
+        name = 'S-%02d' % number
+        shards.append({'shard': name, 'stage': snapshot['stage'], 'sections': sorted({group(k)[1] for k in keys}),
+                       'instructions': 'Оцени каждое ребро из edges по критическому проходу %s. Для PASS назови механизм и различающий пример '
+                                       'в 1–3 предложениях; поля не цитируй — укажи в evidence ID или путь к полю (FR-1#data.exceptions[2]). '
+                                       'Ответ — файл result рядом с шардом по форме result_template; notes — кандидаты в findings для основного ревьюера. '
+                                       'Не правь кандидат и review.json.' % QUALITY,
+                       'result': name + '.result.json',
+                       'edges': [dict(edges[k], why=why.get(review['edges'][k]['reason'], 'changed')) for k in keys],
+                       'entities': {x: snapshot['entities'][x] for x in ends},
+                       'changed_since_base': changes,
+                       'neighbour_edges': {n: '%s %s → %s' % (edges[n]['type'], edges[n]['from'], edges[n]['to']) +
+                                           ('' if old['edges'].get(n) == edges[n] else ' [new/changed since base: %s]' % edges[n]['rationale'])
+                                           for n in neighbours},
+                       'basis': {b: '%s: %s' % (snapshot['entities'][b]['kind'], summary(snapshot['entities'][b]['statement'])) for b in basis},
+                       'result_template': {'shard': name, 'edges': {k: {'status': 'UNKNOWN', 'reason': '', 'evidence': []} for k in keys}, 'notes': []}})
+    return shards
+
+
+def apply_assessments(root, folder, meta, snapshot, update):
+    """Merge reviewer-written assessments into review.json after structural validation."""
+    request, review = load(folder / 'review-request.json'), load(folder / 'review.json')
+    need(review.get('identity') == request['identity'] == review_identity(root, folder, meta, snapshot), 'STALE review; candidate/contract/policy changed')
+    need(isinstance(update, dict) and set(update) <= {'shard', 'reviewer', 'criteria', 'edges', 'formal', 'runtime', 'findings', 'notes'}, 'Unknown assessment fields')
+    allowed = None
+    if 'shard' in update:
+        shard = load(folder / 'shards' / (token(update['shard']) + '.json'))
+        allowed = {e['id'] for e in shard['edges']}
+    def valid(value, label):
+        need(isinstance(value, dict) and set(value) <= {'status', 'reason', 'evidence'}, 'Assessment is fresh; drop inherited/context and extra fields: ' + label)
+        need(value.get('status') in ('PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE'), 'Invalid status: ' + label)
+        need(isinstance(value.get('reason'), str) and value['reason'].strip(), 'Assessment requires explanation: ' + label)
+        need(isinstance(value.get('evidence', []), list) and all(reference(snapshot, r) for r in value.get('evidence', [])), 'Unknown evidence reference: ' + label)
+        need(value['status'] != 'PASS' or value.get('evidence'), 'PASS needs evidence references: ' + label)
+        return dict(value, evidence=value.get('evidence', []))
+    for key, value in (update.get('edges') or {}).items():
+        need(key in snapshot['edges'], 'Unknown edge: ' + str(key))
+        need(allowed is None or key in allowed, 'Edge is outside shard ' + str(update.get('shard')) + ': ' + key)
+        review['edges'][key] = valid(value, key)
+    for key, value in (update.get('criteria') or {}).items():
+        need(key in CRITERIA, 'Unknown criterion: ' + str(key))
+        review['criteria'][key] = valid(value, key)
+    for name in ('formal', 'runtime'):
+        if name in update:
+            review[name] = valid(update[name], name)
+    if 'reviewer' in update:
+        need(isinstance(update['reviewer'], str) and update['reviewer'].strip(), 'Reviewer identity is required')
+        review['reviewer'] = update['reviewer']
+    findings = {f['id']: f for f in review['findings']}
+    for finding in update.get('findings') or []:
+        need(isinstance(finding, dict), 'Invalid finding')
+        token(finding.get('id'))
+        findings[finding['id']] = finding
+    review['findings'] = list(findings.values())
+    atomic_bytes(folder / 'review.json', (json.dumps(review, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode('utf-8'))
+    return {'applied': {k: len(update.get(k) or {}) for k in ('edges', 'criteria', 'findings')},
+            'unknown_edges': sorted(k for k, a in review['edges'].items() if a['status'] == 'UNKNOWN'),
+            'notes': update.get('notes') or []}
 
 
 def md(value):
@@ -701,23 +909,27 @@ def review_gate(root, folder):
         if value['status'] == 'PASS':
             need(isinstance(value.get('evidence'), list) and value['evidence'], 'PASS needs evidence references')
             for ref in value['evidence']:
-                need(isinstance(ref, str) and (ref in snapshot['entities'] or ref in snapshot['edges'] or ref in snapshot['documents'] or ref == 'mechanical-report'), 'Unknown evidence reference: ' + str(ref))
+                need(reference(snapshot, ref), 'Unknown evidence reference: ' + str(ref))
         return value['status']
     for name in CRITERIA:
         need('inherited' not in review['criteria'][name], 'Criteria are never inherited: ' + name)
         statuses.append(assessment(review['criteria'][name], name in rules['na_allowed']))
     need(set(review.get('edges', {})) == set(snapshot['edges']), 'Review must address every traceability edge')
-    priors = None
+    plan = None
     for key, edge in snapshot['edges'].items():
         if 'inherited' in review['edges'][key]:
-            # Recomputed from the pinned prior, so a reviewer cannot mint an inherited PASS.
-            need(load(folder / 'contract.json')['mode'] == 'fragment', 'stage-review assesses every edge afresh: ' + key)
-            if priors is None:
+            # Recomputed from the pinned priors, so a reviewer cannot mint an inherited PASS or skip a required fresh reading.
+            if plan is None:
                 pinned = {p['label']: p['review_digest'] for p in request.get('priors', [])}
-                priors = {p['label']: p for p in prior_reviews(root, folder, meta) if pinned.get(p['label']) == digest(p['review'])}
-            prior = priors.get(review['edges'][key]['inherited'])
-            need(prior is not None, 'Inherited assessment source missing or changed: ' + key)
-            need(inheritable(prior, snapshot, key) and without_inheritance(review['edges'][key]) == without_inheritance(prior['review']['edges'][key]),
+                priors = [p for p in prior_reviews(root, folder, meta) if pinned.get(p['label']) == digest(p['review'])]
+                need(len(priors) == len(pinned), 'Inherited assessment source missing or changed')
+                plan = review_plan(snapshot, load(folder / 'contract.json')['mode'], identity, priors)
+            kind, expected = plan.get(key, ('fresh', 'changed'))
+            need(kind == 'inherit', 'Inherited assessment not allowed for ' + key + ' (' + str(expected) + '); remove "inherited" and assess afresh')
+            # A missing context (package prepared before contexts existed) only makes a later stage-review re-read the edge.
+            given = review['edges'][key]
+            need(given.get('inherited') == expected['inherited'] and without_inheritance(given) == without_inheritance(expected) and
+                 given.get('context', expected.get('context')) == expected.get('context'),
                  'Inherited assessment does not match its reviewed source: ' + key + '; remove "inherited" and assess afresh')
         is_due = due(edge, snapshot['stage'])
         result = assessment(review['edges'][key], not is_due)
@@ -735,7 +947,7 @@ def review_gate(root, folder):
              finding.get('severity') in ('Critical', 'High', 'Medium', 'Low') and
              finding.get('state') in ('open', 'resolved', 'retracted'), 'Invalid finding')
         need(finding.get('reason') and finding.get('sources'), 'Finding requires sources and reasoning')
-        need(isinstance(finding['sources'], list) and all(x in snapshot['entities'] or x in snapshot['edges'] or x in snapshot['documents'] for x in finding['sources']), 'Unknown finding source')
+        need(isinstance(finding['sources'], list) and all(reference(snapshot, x) and x != 'mechanical-report' for x in finding['sources']), 'Unknown finding source')
         if finding['kind'] in ('contradiction', 'contract_gap'):
             need(finding.get('counterexample') and finding.get('closure'), 'Confirmed finding needs counterexample and closure condition')
         if finding['state'] == 'open':
@@ -798,6 +1010,8 @@ def main(argv=None):
     for name in ('check', 'prepare-review', 'accept', 'impact', 'diff'):
         cmd = sub.add_parser(name); cmd.add_argument('--package', type=Path, required=True)
     show = sub.add_parser('show'); show.add_argument('--package', type=Path, required=True); show.add_argument('ids', nargs='+')
+    assess = sub.add_parser('assess', help='Merge JSON assessments (a shard result or reviewer file) into review.json')
+    assess.add_argument('--package', type=Path, required=True); assess.add_argument('files', type=Path, nargs='+')
     approve = sub.add_parser('approve'); approve.add_argument('--stage', choices=STAGES, required=True); approve.add_argument('--decision', required=True)
     sub.add_parser('status')
     sub.add_parser('sync-docs')
@@ -866,6 +1080,14 @@ def main(argv=None):
         previous = previous_candidate(meta)
         print(json.dumps({'base': diff(old, snapshot), 'previous': diff(previous, snapshot) if previous else None}, ensure_ascii=False, indent=1))
         return 0
+    if args.command == 'assess':
+        folder = args.package.resolve()
+        meta, snapshot, _ = candidate(root, folder)
+        results = [dict(apply_assessments(root, folder, meta, snapshot, load(path)), file=str(path)) for path in args.files]
+        unknown = results[-1]['unknown_edges']
+        print(json.dumps({'files': [{k: r[k] for k in ('file', 'applied', 'notes')} for r in results],
+                          'unknown_edges': len(unknown), 'unknown_sample': unknown[:20]}, ensure_ascii=False, indent=1))
+        return 0
     if args.command in ('check', 'prepare-review', 'accept', 'impact'):
         folder = args.package.resolve()
         if args.command == 'accept':
@@ -887,22 +1109,20 @@ def main(argv=None):
             need(report['mechanical'] == 'PASS', 'Repair mechanical failures before review')
             identity = review_identity(root, folder, meta, snapshot)
             contract = load(folder / 'contract.json')
-            priors = prior_reviews(root, folder, meta)
-            # stage-review re-reads every edge; findings still carry over.
-            sources = priors if contract['mode'] == 'fragment' else []
+            sources = prior_reviews(root, folder, meta)
+            plan = review_plan(snapshot, contract['mode'], identity, sources)
             assessment = {'status': 'UNKNOWN', 'reason': 'Not reviewed', 'evidence': []}
             edges = {}
             for key, edge in snapshot['edges'].items():
-                hit = next((p for p in sources if inheritable(p, snapshot, key)), None)
                 if not due(edge, snapshot['stage']):
                     edges[key] = {'status': 'NOT_APPLICABLE', 'reason': 'due_stage %s is after %s; assess at that stage' % (edge['due_stage'], snapshot['stage']), 'evidence': []}
-                elif hit:
-                    edges[key] = dict(without_inheritance(hit['review']['edges'][key]), inherited=hit['label'])
+                elif plan[key][0] == 'inherit':
+                    edges[key] = plan[key][1]
                 else:
-                    edges[key] = copy.deepcopy(assessment)
+                    edges[key] = {'status': 'UNKNOWN', 'reason': NOT_REVIEWED[plan[key][1]], 'evidence': []}
             review = {'identity': identity, 'reviewer': '',
                       'criteria': {c: copy.deepcopy(assessment) for c in CRITERIA}, 'edges': edges,
-                      'findings': carried_findings(root, meta, priors),
+                      'findings': carried_findings(root, meta, sources),
                       'formal': copy.deepcopy(assessment), 'runtime': copy.deepcopy(assessment)}
             write(folder / 'review-request.json', {'identity': identity, 'created': now(), 'report': report,
                   'priors': [{'label': p['label'], 'review_digest': digest(p['review'])} for p in sources]})
@@ -913,6 +1133,16 @@ def main(argv=None):
             preview.mkdir(exist_ok=False)
             for name, body in render(snapshot).items():
                 (preview / name).write_text(body, encoding='utf-8')
+            (folder / 'shards').mkdir(exist_ok=False)
+            shards = review_shards(snapshot, old, review)
+            for shard in shards:
+                # indent=1 keeps lines readable for a reviewer while cutting the size of nested entity data.
+                with (folder / 'shards' / (shard['shard'] + '.json')).open('x', encoding='utf-8', newline='\n') as stream:
+                    stream.write(json.dumps(shard, ensure_ascii=False, indent=1) + '\n')
+            report['shards'] = [{'shard': x['shard'], 'edges': len(x['edges']), 'sections': x['sections']} for x in shards]
+            with (folder / 'review-brief.md').open('a', encoding='utf-8', newline='\n') as brief:
+                brief.write('\n## Шарды для оценки рёбер\n\nФайлы shards/<ID>.json; ответ — shards/<ID>.result.json, вносится командой assess.\n\n')
+                brief.write(''.join('- %s: %d рёбер; %s\n' % (x['shard'], x['edges'], ', '.join(x['sections'])) for x in report['shards']) or 'Нет.\n')
         elif (folder / 'review.json').exists():
             result, _, _ = review_gate(root, folder)
             print(canonical(result))

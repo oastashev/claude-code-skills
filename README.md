@@ -18,10 +18,6 @@ Then install a plugin from it:
 /plugin install blueprint@claude-code-skills
 ```
 
-Before 2.0.0 the plugin was called `app-pipeline`. If you have it installed, run
-`/plugin uninstall app-pipeline@claude-code-skills` and install `blueprint`
-instead. Commands and the `docs/` / `openspec/` layout are unchanged.
-
 ## Plugins
 
 ### blueprint

@@ -420,27 +420,143 @@ class Transactions(unittest.TestCase):
         self.call('prepare-review', '--package', str(changed))
         self.assertNotIn('inherited', s.load(changed / 'review.json')['edges']['E-1'])
 
-    def test_inherited_assessment_cannot_be_forged_or_used_in_stage_review(self):
+    def test_inherited_assessment_cannot_be_forged(self):
         self.fragment()
         folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
         added = self.home / 'added'
         self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
         self.with_second_scenario(added)
         review = self.reviewed(added)
-        for forged in ('altered', 'minted'):
+        for forged in ('altered', 'minted', 'context'):
             attempt = copy.deepcopy(review)
             if forged == 'altered':
                 attempt['edges']['E-1']['reason'] = 'Silently rewritten while claiming inheritance'
-            else:
+            elif forged == 'minted':
                 attempt['edges']['E-2']['inherited'] = attempt['edges']['E-1']['inherited']
+            else:
+                attempt['edges']['E-1']['context'] = '0' * 64
             self.save(added / 'review.json', attempt)
             with self.subTest(forged=forged), self.assertRaisesRegex(s.Invalid, 'Inherited assessment'):
                 s.review_gate(self.root, added)
+        legacy = copy.deepcopy(review); del legacy['edges']['E-1']['context']
+        self.save(added / 'review.json', legacy)
+        self.assertEqual(s.review_gate(self.root, added)[0]['gate'], 'PASS')
+
+    def stage_review_after_two_fragments(self):
+        """E-1 is read in the first fragment; the second adds E-2 on the same obligation and inherits E-1."""
+        self.fragment()
+        folder = self.package(); self.reviewed(folder); self.call('accept', '--package', str(folder))
+        added = self.home / 'added'
+        self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(added))
+        self.with_second_scenario(added); self.reviewed(added)
+        revision = json.loads(self.call('accept', '--package', str(added)))['revision']
         contract = s.load(self.contract); contract['mode'] = 'stage-review'; self.save(self.contract, contract)
         final = self.home / 'final'
         self.call('begin', '--stage', 'BRD', '--contract', str(self.contract), '--work', str(final))
+        return final, revision
+
+    def test_stage_review_rereads_edges_whose_context_changed(self):
+        final, revision = self.stage_review_after_two_fragments()
+        with patch.object(s, 'SPOT_CHECK', (0, 0, 0)):
+            self.call('prepare-review', '--package', str(final))
+            edges = s.load(final / 'review.json')['edges']
+            self.assertEqual((edges['E-1']['status'], edges['E-1']['reason']), ('UNKNOWN', s.NOT_REVIEWED['context']))
+            self.assertEqual((edges['E-2']['status'], edges['E-2']['inherited']), ('PASS', 'revision:' + revision))
+            brief = (final / 'review-brief.md').read_text(encoding='utf-8')
+            self.assertIn('- E-1: verifies SC-1 → BR-1', brief)
+            self.assertNotIn('- E-2:', brief)
+            review = self.fill(final)
+            self.assertEqual(s.review_gate(self.root, final)[0]['gate'], 'PASS')
+            review['edges']['E-1'] = dict(review['edges']['E-2'])
+            self.save(final / 'review.json', review)
+            with self.assertRaisesRegex(s.Invalid, 'Inherited assessment not allowed for E-1'):
+                s.review_gate(self.root, final)
+
+    def test_stage_review_spot_check_is_chosen_by_script(self):
+        final, _ = self.stage_review_after_two_fragments()
         self.call('prepare-review', '--package', str(final))
-        self.assertEqual(s.load(final / 'review.json')['edges']['E-1']['status'], 'UNKNOWN')
+        self.assertEqual(s.load(final / 'review.json')['edges']['E-2']['reason'], s.NOT_REVIEWED['spot-check'])
+        review = self.fill(final)
+        meta, snapshot = s.load(final / 'package.json'), s.load(final / 'candidate.json')
+        with patch.object(s, 'SPOT_CHECK', (0, 0, 0)):
+            plan = s.review_plan(snapshot, 'stage-review', review['identity'], s.prior_reviews(self.root, final, meta))
+        review['edges']['E-2'] = plan['E-2'][1]
+        self.save(final / 'review.json', review)
+        with self.assertRaisesRegex(s.Invalid, 'Inherited assessment not allowed for E-2'):
+            s.review_gate(self.root, final)
+
+    def test_stage_review_retry_inherits_fresh_assessments_of_previous_package(self):
+        final, _ = self.stage_review_after_two_fragments()
+        with patch.object(s, 'SPOT_CHECK', (0, 0, 0)):
+            review = self.reviewed(final)
+            review['findings'] = [{'id': 'F-1', 'kind': 'contract_gap', 'severity': 'Medium', 'state': 'open', 'reason': 'Two empty formats',
+                                   'sources': ['BR-1'], 'counterexample': 'Empty bytes and empty array both pass', 'closure': 'Choose one format'}]
+            self.save(final / 'review.json', review)
+            retry = self.home / 'retry'
+            self.call('begin', '--stage', 'BRD', '--from', str(final), '--work', str(retry))
+            self.call('prepare-review', '--package', str(retry))
+            edges = s.load(retry / 'review.json')['edges']
+        self.assertEqual(edges['E-1']['inherited'], 'package:' + s.load(final / 'package.json')['id'])
+        self.assertEqual(edges['E-1']['reason'], review['edges']['E-1']['reason'])
+
+    def test_evidence_may_point_to_a_field(self):
+        folder = self.package()
+        review = self.reviewed(folder)
+        for ref, valid in (('BR-1#data.outcome', True), ('SC-1#statement', True), ('E-1#rationale', True),
+                           ('BR-1#data.missing', False), ('BR-1#data.exceptions[0]', False), ('NOPE#statement', False)):
+            with self.subTest(ref=ref):
+                review['edges']['E-1']['evidence'] = [ref]
+                self.save(folder / 'review.json', review)
+                if valid:
+                    self.assertEqual(s.review_gate(self.root, folder)[0]['gate'], 'PASS')
+                else:
+                    with self.assertRaisesRegex(s.Invalid, 'Unknown evidence reference'):
+                        s.review_gate(self.root, folder)
+
+    def test_shards_carry_reading_context_and_assess_merges_results(self):
+        folder = self.package()
+        self.with_second_scenario(folder)
+        with patch.object(s, 'SHARD_EDGES', 1):
+            report = json.loads(self.call('prepare-review', '--package', str(folder)))
+        self.assertEqual([x['edges'] for x in report['shards']], [1, 1])
+        shard = s.load(folder / 'shards' / 'S-01.json')
+        edge = shard['edges'][0]['id']
+        self.assertEqual(shard['edges'][0]['why'], 'changed')
+        self.assertEqual(set(shard['entities']), {shard['edges'][0]['from'], 'BR-1'})
+        self.assertEqual(len(shard['neighbour_edges']), 1)
+        self.assertIn('S-01', (folder / 'review-brief.md').read_text(encoding='utf-8'))
+        other = ({'E-1', 'E-2'} - {edge}).pop()
+        answer = self.home / 'S-01.result.json'
+        for wrong, message in (({other: {'status': 'PASS', 'reason': 'x', 'evidence': ['BR-1']}}, 'outside shard'),
+                               ({edge: {'status': 'PASS', 'reason': 'x', 'evidence': ['BR-1'], 'inherited': 'revision:x'}}, 'fresh'),
+                               ({edge: {'status': 'PASS', 'reason': 'x', 'evidence': ['BR-1#nothing']}}, 'evidence')):
+            with self.subTest(message=message):
+                self.save(answer, {'shard': 'S-01', 'edges': wrong})
+                with self.assertRaisesRegex(s.Invalid, message):
+                    self.call('assess', '--package', str(folder), str(answer))
+        passed = {'status': 'PASS', 'reason': 'Empty and one-item exports each reject a distinct wrong implementation', 'evidence': ['BR-1#data.outcome']}
+        self.save(answer, {'shard': 'S-01', 'edges': {edge: passed}, 'notes': ['check header wording']})
+        second = self.home / 'S-02.result.json'
+        self.save(second, {'shard': 'S-02', 'edges': {other: passed}})
+        main = self.home / 'main.json'
+        self.save(main, {'reviewer': 'Regression fixture; synthetic assessment, not an LLM review', 'criteria': {c: passed for c in s.CRITERIA},
+                         'formal': {'status': 'UNKNOWN', 'reason': 'Not required'}, 'runtime': {'status': 'UNKNOWN', 'reason': 'Not required'}})
+        result = json.loads(self.call('assess', '--package', str(folder), str(answer), str(second), str(main)))
+        self.assertEqual((result['unknown_edges'], result['files'][0]['notes']), (0, ['check header wording']))
+        self.assertEqual(s.review_gate(self.root, folder)[0]['gate'], 'PASS')
+        snapshot = s.load(folder / 'candidate.json'); snapshot['entities']['BR-1']['data']['outcome'] = 'changed'
+        self.save(folder / 'candidate.json', snapshot)
+        with self.assertRaisesRegex(s.Invalid, 'STALE'):
+            self.call('assess', '--package', str(folder), str(main))
+
+    def test_later_stage_relation_does_not_reopen_earlier_edge(self):
+        folder = self.package()
+        snapshot = s.load(folder / 'candidate.json')
+        before = s.edge_context(snapshot, s.incidence(snapshot), 'E-1')
+        snapshot['edges']['E-3'] = {'id': 'E-3', 'from': 'SC-1', 'to': 'BR-1', 'type': 'refines', 'due_stage': 'TRD', 'rationale': 'Later refinement'}
+        self.assertEqual(s.edge_context(snapshot, s.incidence(snapshot), 'E-1'), before)
+        snapshot['edges']['E-3']['due_stage'] = 'BRD'
+        self.assertNotEqual(s.edge_context(snapshot, s.incidence(snapshot), 'E-1'), before)
 
     def test_begin_from_unaccepted_package_carries_work_and_review(self):
         self.fragment()
