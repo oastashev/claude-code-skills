@@ -4,7 +4,7 @@
 
 Это marketplace плагинов Claude Code, а не приложение, создаваемое этими
 плагинами. Основной плагин `app-pipeline` проводит пользователя через
-`explore → assemble → audit → kickoff`.
+`explore → assemble → audit → kickoff → scaffold`.
 
 - `.claude-plugin/marketplace.json` — каталог плагинов.
 - `plugins/app-pipeline/.claude-plugin/plugin.json` — манифест плагина.
@@ -13,7 +13,7 @@
 - `scripts/` — Python CLI и тесты рядом с ними.
 - `kickoff/templates/` — инструкции, переносимые в целевой проект.
 
-Каталоги `docs/specification/`, `docs/kickoff/` и `openspec/`, упоминаемые
+Каталоги `docs/specification/`, `docs/kickoff/`, `docs/scaffold/` и `openspec/`, упоминаемые
 скилами, относятся к целевым проектам. Не создавай их здесь и не запускай
 пайплайн при обычном сопровождении marketplace.
 
@@ -61,11 +61,12 @@
 python -m unittest discover -s plugins/app-pipeline/skills/assemble/scripts -p "test_*.py"
 python -m unittest discover -s plugins/app-pipeline/skills/audit/scripts -p "test_*.py"
 python -m unittest discover -s plugins/app-pipeline/skills/kickoff/scripts -p "test_*.py"
+python -m unittest discover -s plugins/app-pipeline/skills/scaffold/scripts -p "test_*.py"
 git diff --check
 ```
 
 Запускай набор изменяемого помощника; при изменении межэтапного контракта —
-все три. Набор kickoff включает интеграционные тесты цепочки и анализ
+все четыре. Набор kickoff включает интеграционные тесты цепочки и анализ
 параллелизма. Discovery из корня не заменяет эти команды: папки скилов
 не оформлены как Python-пакеты.
 
